@@ -12,11 +12,12 @@ from pathlib import Path
 
 import aiohttp
 from azure.identity.aio import DefaultAzureCredential
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from samples import AGENTS, SAMPLES
+import auth
+from samples import AGENTS, MODES, SAMPLES
 from session import VoiceBridge
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -30,6 +31,13 @@ PROJECT_ENDPOINT = os.environ.get(
 )
 MAX_SESSIONS = int(os.environ.get("MAX_SESSIONS", "10"))
 MAX_SESSION_SECONDS = int(os.environ.get("MAX_SESSION_SECONDS", "1800"))
+AGENT_IDS = {a["id"] for a in AGENTS}
+# Paths reachable without the password (the login page itself and its health probe).
+PUBLIC_PATHS = {"/healthz", "/login"}
+
+
+def app_password() -> str:
+    return os.environ.get("APP_PASSWORD", "")
 
 
 @asynccontextmanager
@@ -37,6 +45,9 @@ async def lifespan(app: FastAPI):
     app.state.credential = DefaultAzureCredential()
     app.state.http = aiohttp.ClientSession()
     app.state.active = 0
+    app.state.throttle = auth.LoginThrottle()
+    if not app_password():
+        logger.warning("APP_PASSWORD is not set: every request except /healthz will be refused.")
     try:
         yield
     finally:
@@ -47,24 +58,91 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Call center agent tester", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def password_gate(request: Request, call_next):
+    path = request.url.path
+    if path in PUBLIC_PATHS or auth.token_valid(request.cookies.get(auth.COOKIE), app_password()):
+        return await call_next(request)
+    if path.startswith("/api/") or path.startswith("/static/") or request.method != "GET":
+        return JSONResponse({"error": "authentication required"}, status_code=401)
+    return RedirectResponse("/login", status_code=302)
+
+
+def client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    return forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
+
+
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/login")
+async def login_page() -> HTMLResponse:
+    return HTMLResponse(auth.LOGIN_PAGE)
+
+
+@app.post("/login")
+async def login(request: Request) -> JSONResponse:
+    throttle: auth.LoginThrottle = request.app.state.throttle
+    ip = client_ip(request)
+    if throttle.blocked(ip):
+        return JSONResponse({"error": "too many attempts"}, status_code=429)
+    try:
+        body = await request.json()
+        given = str(body.get("password", ""))
+    except Exception:
+        given = ""
+    expected = app_password()
+    if not expected or not auth.password_matches(given, expected):
+        throttle.record_failure(ip)
+        return JSONResponse({"error": "wrong password"}, status_code=401)
+    throttle.reset(ip)
+    response = JSONResponse({"ok": True})
+    response.set_cookie(
+        auth.COOKIE, auth.make_token(expected), max_age=auth.TTL_SECONDS, httponly=True, samesite="lax",
+        secure=request.headers.get("x-forwarded-proto", request.url.scheme) == "https",
+    )
+    return response
+
+
+@app.post("/logout")
+async def logout() -> JSONResponse:
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(auth.COOKIE)
+    return response
+
+
 @app.get("/api/config")
 async def config() -> dict:
     return {
-        "agents": [{**a, "samples": SAMPLES[a["id"]]} for a in AGENTS],
+        "agents": AGENTS,
+        "modes": MODES,
+        "samples": SAMPLES,
         "project": PROJECT_NAME,
         "maxSessionSeconds": MAX_SESSION_SECONDS,
     }
 
 
+def origin_allowed(ws: WebSocket) -> bool:
+    origin = ws.headers.get("origin")
+    if not origin:
+        return True
+    host = ws.headers.get("x-forwarded-host") or ws.headers.get("host") or ""
+    return origin.split("://", 1)[-1] == host
+
+
 @app.websocket("/ws/session")
-async def session_ws(ws: WebSocket, agent: str, audio: bool = False) -> None:
-    if agent not in SAMPLES:
-        await ws.close(code=4404, reason="unknown agent")
+async def session_ws(ws: WebSocket, agent: str, mode: str = "text") -> None:
+    if not auth.token_valid(ws.cookies.get(auth.COOKIE), app_password()):
+        await ws.close(code=4401, reason="authentication required")
+        return
+    if not origin_allowed(ws):
+        await ws.close(code=4403, reason="origin not allowed")
+        return
+    if agent not in AGENT_IDS or mode not in {m["id"] for m in MODES}:
+        await ws.close(code=4404, reason="unknown agent or mode")
         return
     await ws.accept()
     state = ws.app.state
@@ -84,7 +162,7 @@ async def session_ws(ws: WebSocket, agent: str, audio: bool = False) -> None:
     bridge = VoiceBridge(
         WsSink(), state.credential, state.http,
         endpoint=VOICELIVE_ENDPOINT, project_name=PROJECT_NAME, project_endpoint=PROJECT_ENDPOINT,
-        agent_name=agent, audio_out=audio,
+        agent_name=agent, mode=mode,
     )
 
     async def reader() -> None:

@@ -1,9 +1,14 @@
+import time
+
+import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 import app as webapp
+import auth
 from logtail import agent_session_id, parse_record
 from samples import AGENTS, SAMPLES
-from session import response_text, usage_of
+from session import VoiceBridge, response_text, usage_of
 
 
 def test_parse_trace_line():
@@ -47,33 +52,104 @@ def test_response_text_and_usage():
 
 
 def test_samples_are_valid():
-    ids = {a["id"] for a in AGENTS}
-    assert ids == set(SAMPLES) and len(ids) == 2
-    for agent_id, samples in SAMPLES.items():
-        assert len(samples) >= 5
-        assert len({s["id"] for s in samples}) == len(samples)
-        for s in samples:
-            assert s["title"] and s["description"] and s["turns"]
-            assert all(isinstance(t, str) and t.strip() for t in s["turns"])
+    assert len(AGENTS) == 2
+    assert len(SAMPLES) >= 5
+    assert len({s["id"] for s in SAMPLES}) == len(SAMPLES)
+    for s in SAMPLES:
+        assert s["title"] and s["description"] and s["turns"]
+        assert all(isinstance(t, str) and t.strip() for t in s["turns"])
 
 
-def test_http_endpoints():
+def test_token_roundtrip_and_password_change():
+    token = auth.make_token("secret")
+    assert auth.token_valid(token, "secret")
+    assert not auth.token_valid(token, "other")
+    assert not auth.token_valid(None, "secret") and not auth.token_valid("garbage", "secret")
+    assert not auth.token_valid(token, "secret", now=time.time() + auth.TTL_SECONDS + 10)
+    assert not auth.token_valid(token, "")
+
+
+def test_password_matches():
+    assert auth.password_matches("abc", "abc")
+    assert not auth.password_matches("abd", "abc")
+
+
+def test_login_throttle():
+    t = auth.LoginThrottle()
+    for i in range(auth.MAX_FAILURES):
+        assert not t.blocked("ip", now=100 + i)
+        t.record_failure("ip", now=100 + i)
+    assert t.blocked("ip", now=110)
+    assert not t.blocked("ip", now=100 + auth.FAILURE_WINDOW + 10)
+    assert not t.blocked("other", now=110)
+
+
+def test_http_requires_password(monkeypatch):
+    monkeypatch.setenv("APP_PASSWORD", "pw")
     with TestClient(webapp.app) as client:
         assert client.get("/healthz").status_code == 200
+        assert "Password" in client.get("/login").text
+        r = client.get("/", follow_redirects=False)
+        assert r.status_code == 302 and r.headers["location"] == "/login"
+        assert client.get("/api/config").status_code == 401
+        assert client.get("/static/app.js").status_code == 401
+
+        assert client.post("/login", json={"password": "nope"}).status_code == 401
+        assert client.post("/login", json={"password": "pw"}).status_code == 200
+
         cfg = client.get("/api/config").json()
         assert [a["id"] for a in cfg["agents"]] == [a["id"] for a in AGENTS]
-        assert all(a["samples"] for a in cfg["agents"])
-        assert "project" in cfg
+        assert len(cfg["samples"]) == len(SAMPLES) and {m["id"] for m in cfg["modes"]} == {"text", "voice"}
         index = client.get("/")
         assert index.status_code == 200 and "Call center agent tester" in index.text
         assert client.get("/static/app.js").status_code == 200
 
+        client.post("/logout")
+        assert client.get("/api/config").status_code == 401
 
-def test_websocket_rejects_unknown_agent():
+
+def test_login_is_throttled(monkeypatch):
+    monkeypatch.setenv("APP_PASSWORD", "pw")
     with TestClient(webapp.app) as client:
-        try:
-            with client.websocket_connect("/ws/session?agent=nope") as ws:
-                msg = ws.receive_json()
-                assert msg["type"] == "error"
-        except Exception:
-            pass
+        codes = [client.post("/login", json={"password": "bad"}).status_code for _ in range(auth.MAX_FAILURES + 1)]
+        assert codes[-1] == 429
+        assert client.post("/login", json={"password": "pw"}).status_code == 429
+
+
+def test_no_password_configured_refuses_everything(monkeypatch):
+    monkeypatch.delenv("APP_PASSWORD", raising=False)
+    with TestClient(webapp.app) as client:
+        assert client.post("/login", json={"password": ""}).status_code == 401
+        assert client.get("/api/config").status_code == 401
+
+
+def test_websocket_requires_cookie_and_valid_params(monkeypatch):
+    monkeypatch.setenv("APP_PASSWORD", "pw")
+    with TestClient(webapp.app) as client:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            with client.websocket_connect("/ws/session?agent=handoff-agent&mode=text"):
+                pass
+        assert exc.value.code == 4401
+
+        client.post("/login", json={"password": "pw"})
+        for query in ("agent=nope&mode=text", "agent=handoff-agent&mode=hologram"):
+            with pytest.raises(WebSocketDisconnect) as exc:
+                with client.websocket_connect(f"/ws/session?{query}"):
+                    pass
+            assert exc.value.code == 4404
+
+        with pytest.raises(WebSocketDisconnect) as exc:
+            with client.websocket_connect(
+                "/ws/session?agent=handoff-agent&mode=text", headers={"origin": "https://evil.example"}
+            ):
+                pass
+        assert exc.value.code == 4403
+
+
+def test_bridge_modes():
+    text = VoiceBridge(None, None, None, endpoint="", project_name="", project_endpoint="", agent_name="a", mode="text")
+    voice = VoiceBridge(None, None, None, endpoint="", project_name="", project_endpoint="", agent_name="a", mode="voice")
+    assert not text.audio_out and voice.audio_out
+    assert text._session_config().modalities == ["text"]
+    cfg = voice._session_config()
+    assert "audio" in cfg.modalities and cfg.input_audio_transcription.model == "azure-speech"

@@ -75,6 +75,7 @@ class TaskStore:
                 return existing
         self._tasks[candidate.id] = candidate
         self._by_session.setdefault(session_key, []).append(candidate.id)
+        emit("task.queued", task_id=candidate.id, topic=candidate.topic, params=candidate.params)
         handle = asyncio.create_task(self._run(candidate), name=f"worker-{topic}-{candidate.id}")
         self._handles[candidate.id] = handle
         self._running.add(handle)
@@ -116,8 +117,10 @@ class TaskStore:
         ]
         for t in ready:
             t.delivered = True
+            failed = t.status == TaskStatus.FAILED
             if t.status == TaskStatus.COMPLETED:
                 t.status = TaskStatus.DELIVERED
+            emit("task.delivered", task_id=t.id, topic=t.topic, failed=failed)
         return ready
 
     def cancel(self, session_key: str) -> list[Task]:

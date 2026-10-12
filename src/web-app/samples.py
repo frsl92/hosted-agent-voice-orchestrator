@@ -1,4 +1,8 @@
-"""Agents and sample conversations offered by the test app."""
+"""Agents, interaction modes and sample conversations offered by the test app.
+
+The sample conversations are shared by every agent: each line is something a customer would naturally say
+to either design, so the same script can be used to compare them side by side.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +11,7 @@ from typing import Any
 AGENTS: list[dict[str, Any]] = [
     {
         "id": "handoff-agent",
+        "kind": "handoff",
         "name": "Handoff agent",
         "tagline": "Router → billing / orders specialist → router",
         "description": (
@@ -17,6 +22,7 @@ AGENTS: list[dict[str, Any]] = [
     },
     {
         "id": "background-agent",
+        "kind": "background",
         "name": "Background agent",
         "tagline": "Foreground agent confirms → background workers run",
         "description": (
@@ -27,101 +33,74 @@ AGENTS: list[dict[str, Any]] = [
     },
 ]
 
-SAMPLES: dict[str, list[dict[str, Any]]] = {
-    "handoff-agent": [
-        {
-            "id": "two-topics",
-            "title": "Two topics in one sentence",
-            "description": "Roaming charge + order status. Shows multi-topic detection, queueing and the bridge between sub-agents.",
-            "turns": [
-                "Hi, I don't understand the roaming charge on my bill, and I'd also like to know where order 12345 is.",
-                "Okay, thanks. That explains it.",
-                "No, that's everything. Goodbye!",
-            ],
-        },
-        {
-            "id": "billing",
-            "title": "Billing question",
-            "description": "Balance and due date, then a clean call end.",
-            "turns": [
-                "Hello, can you tell me how much I owe this month?",
-                "And when is it due?",
-                "That's all, thank you.",
-            ],
-        },
-        {
-            "id": "order-tracking",
-            "title": "Order tracking",
-            "description": "Shipped order with tracking details.",
-            "turns": [
-                "Hi, I'd like to check on my order 12345.",
-                "What's the tracking number?",
-                "Great, thanks. Bye!",
-            ],
-        },
-        {
-            "id": "order-processing",
-            "title": "Order not shipped yet",
-            "description": "Order still processing: no tracking number, only an ETA.",
-            "turns": ["Where is my order 67890?", "When will it arrive?"],
-        },
-        {
-            "id": "topic-switch",
-            "title": "Topic switch mid-conversation",
-            "description": "Starts with billing, then raises an order while the billing agent is active.",
-            "turns": [
-                "I'd like to know my current balance.",
-                "Actually, can you also tell me what's going on with order 55555?",
-                "Thanks, goodbye.",
-            ],
-        },
-        {
-            "id": "out-of-scope",
-            "title": "Out of scope request",
-            "description": "Something the router cannot help with, followed by an in-scope question.",
-            "turns": ["Can you help me change my mobile plan?", "Okay, then what about my last invoice?"],
-        },
-    ],
-    "background-agent": [
-        {
-            "id": "bill-and-order",
-            "title": "Bill + order with confirmation",
-            "description": "Two requests proposed together, confirmed, then run as background tasks.",
-            "turns": [
-                "Hi, I'd like to know about my latest bill and also check the status of order 12345.",
-                "Yes, that's right.",
-                "No, nothing else. Goodbye!",
-            ],
-        },
-        {
-            "id": "previous-bill",
-            "title": "Previous bill",
-            "description": "A single billing request for the previous invoice period.",
-            "turns": ["Can you check my previous bill?", "Yes please.", "That's all, thank you."],
-        },
-        {
-            "id": "correction",
-            "title": "Customer corrects the plan",
-            "description": "The customer says 'no' to the proposal and corrects the order number.",
-            "turns": ["Please check on order 12345.", "No, I meant order 67890.", "Yes, go ahead."],
-        },
-        {
-            "id": "missing-order",
-            "title": "Missing order number",
-            "description": "The agent has to ask for the order number before it can propose anything.",
-            "turns": ["I want to know where my order is.", "It's 55555.", "Yes, go ahead."],
-        },
-        {
-            "id": "cancel",
-            "title": "Cancel while working",
-            "description": "Cancel the request after it has been confirmed.",
-            "turns": ["Check the status of order 12345 please.", "Yes.", "Actually, never mind. Cancel that."],
-        },
-        {
-            "id": "out-of-scope",
-            "title": "Out of scope request",
-            "description": "Something the agent cannot do, then an in-scope question.",
-            "turns": ["Can you upgrade my data plan?", "Okay, what about my current bill then?"],
-        },
-    ],
-}
+MODES: list[dict[str, str]] = [
+    {"id": "text", "name": "Text", "description": "Type your messages and read the replies."},
+    {"id": "voice", "name": "Voice", "description": "Speak and listen. The transcript is shown for reference."},
+]
+
+SAMPLES: list[dict[str, Any]] = [
+    {
+        "id": "bill-and-order",
+        "title": "Bill and order in one go",
+        "description": "Two topics in one sentence: shows multi-topic detection, queueing and the hand-over between them.",
+        "turns": [
+            "Hi, I'd like to know about my latest bill and also check the status of order 12345.",
+            "Yes, that's right, go ahead.",
+            "Thanks, that's all I needed. Goodbye!",
+        ],
+    },
+    {
+        "id": "billing",
+        "title": "Billing question",
+        "description": "Balance and due date, then a clean end of call.",
+        "turns": [
+            "Hello, can you tell me how much I owe this month?",
+            "Yes, that's right. And when is it due?",
+            "That's all, thank you. Goodbye!",
+        ],
+    },
+    {
+        "id": "order-tracking",
+        "title": "Order tracking",
+        "description": "A shipped order with tracking details.",
+        "turns": [
+            "Hi, I'd like to check on my order 12345.",
+            "Yes, that's right. What's the tracking number?",
+            "Great, thanks. Bye!",
+        ],
+    },
+    {
+        "id": "order-processing",
+        "title": "Order not shipped yet",
+        "description": "The order is still processing: there is no tracking number yet, only an estimate.",
+        "turns": ["Where is my order 67890?", "Yes, that's the one. When will it arrive?"],
+    },
+    {
+        "id": "topic-switch",
+        "title": "Change of topic",
+        "description": "Starts with billing, then the customer switches to an order mid-conversation.",
+        "turns": [
+            "I'd like to know my current balance.",
+            "Actually, forget that. What's going on with order 55555?",
+            "Thanks, goodbye.",
+        ],
+    },
+    {
+        "id": "correction",
+        "title": "Customer corrects themselves",
+        "description": "The customer gives one order number and then corrects it.",
+        "turns": ["Please check on order 12345.", "No, I meant order 67890.", "Yes, that's right. Thanks!"],
+    },
+    {
+        "id": "missing-order",
+        "title": "Missing order number",
+        "description": "The agent has to ask for the order number before it can look anything up.",
+        "turns": ["I want to know where my order is.", "It's 55555.", "Yes, that's right. Thank you!"],
+    },
+    {
+        "id": "out-of-scope",
+        "title": "Out-of-scope request",
+        "description": "Something the agents cannot do, followed by an in-scope question.",
+        "turns": ["Can you help me change my mobile plan?", "Okay, then can you check my previous bill?", "Yes, please."],
+    },
+]

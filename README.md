@@ -99,8 +99,8 @@ agents; the microphone path uses the same session and was not exercised in the b
 
 ## Web app: test and showcase the agents
 
-`src/web-app` is a debugging/showcase UI: pick an agent, pick a sample conversation (or type), chat by text or voice,
-and watch the trace for that session next to the conversation.
+`src/web-app` is a debugging/showcase UI. Sign in with the shared password, pick an agent, pick **Text** or **Voice**,
+load a sample conversation and watch what happens inside the agents while you talk.
 
 ```
 browser ──ws──▶ FastAPI (ACA, managed identity) ──Voice Live──▶ hosted agent (handoff-agent / background-agent)
@@ -108,13 +108,27 @@ browser ──ws──▶ FastAPI (ACA, managed identity) ──Voice Live──
    └── trace events ◀─┴── tails the agent's console log stream (TRACE {json} lines) for that session
 ```
 
-- **Agents and samples:** 6 sample conversations per agent (multi-topic, topic switch, out-of-scope, order not shipped,
-  ...). Click a sample, then **Send next**, **Run all**, or click any line to send it.
-- **Text or voice:** the session always uses Voice Live with server VAD, echo cancellation and noise reduction. The mic
-  button streams audio; "Speak replies" plays the agent's voice. Both can be mixed in one session.
-- **Trace panel** (filterable, expandable rows, JSON download): `voice` (first token / first audio / response.done
-  latency and tokens), `agent` (turn start/end, Decision-1 calls and probabilities, handoffs, tool calls with
-  args/results, background `phase` and `task.*`), `system` (container state) and raw container `log` lines (off by default).
+- **Access:** a shared password (`APP_PASSWORD`, an ACA secret; default in `deploy.ps1` is `meovoicedemo`). No Entra
+  sign-in. Login sets a signed, 12 h, HttpOnly cookie; five wrong attempts per minute per IP are throttled.
+- **Two experiences:** *Text* is a normal chat (Voice Live with text-only modalities: no speech models involved).
+  *Voice* is speak-and-listen with an orb (listening / hearing / thinking / speaking); the transcript is shown for
+  reference only. **New conversation** (or switching agent/experience) closes the session and starts clean.
+- **Same samples for every agent:** 8 scripted conversations (multi-topic, topic switch, correction, missing order
+  number, out-of-scope, ...). In text mode click a line, **Send next** or **Run all**; in voice mode the next line is
+  highlighted as a guide of what to say.
+- **How voice works:** this is the **Voice Live API with Azure speech models, not a realtime LLM**. Voice Live runs in
+  agent mode (`agent_config`), so the hosted agent is the brain. Input: mic PCM16 24 kHz -> backend -> Voice Live, which
+  applies noise suppression, echo cancellation, server VAD and `azure-speech` speech-to-text; the transcript goes to the
+  agent (Responses protocol). Output: the agent's streamed text -> Voice Live TTS (`en-US-Ava:DragonHDLatestNeural`)
+  -> PCM audio -> browser. Barge-in cancels playback. Decision-1 (routing) and gpt-5.6-luna (replies) run inside the
+  agent as ordinary request/response models.
+- **Visual flow:** handoff agent = animated graph (Router / Billing / Orders, token travels along each handoff, path
+  breadcrumb, refused handoffs flash red); background agent = phase stepper (Idle / Proposing / Running) and a task board
+  (queued, running, completed, delivered, failed, cancelled). Both have a turn-by-turn timeline.
+- **Decision-1 tab:** one card per model call with the conversation and questions sent, the answers (probability bars
+  against their thresholds, choice probabilities), the derived result, latency, and the raw request/response.
+- **Trace tab** (filterable, JSON export): `voice` (latency, tokens), `agent` (turns, Decision-1 calls, handoffs, tool
+  calls, background `phase` and `task.*`), `system` and raw container `log` lines (off by default).
   Agents emit these as `TRACE {json}` log lines via `calltrace.py`; the web app parses them from
   `GET {project}/agents/{agent}/sessions/vl_{voiceSessionId}:logstream`.
 - Timestamps come from two machines, so ordering between `voice` and `agent` events can differ by a little clock skew.
@@ -125,23 +139,23 @@ Run locally (uses your `az login`; needs **Azure AI User** + **Cognitive Service
 ```powershell
 cd src\web-app
 uv sync
+$env:APP_PASSWORD = 'meovoicedemo'
 uv run uvicorn app:app --port 8080     # http://localhost:8080
 uv run pytest
 ```
 
 Deploy to Azure Container Apps (creates `rg-voice-tester`: ACR, Log Analytics, ACA environment, user-assigned identity
-with `AcrPull` and the two Foundry roles; builds the image in ACR; enables Entra sign-in for the current tenant):
+with `AcrPull` and the two Foundry roles; builds the image in ACR; stores the password as a secret):
 
 ```powershell
 cd src\web-app
-.\deploy.ps1                 # -SkipAuth only for a private throw-away test
+.\deploy.ps1                          # password defaults to meovoicedemo
+.\deploy.ps1 -AppPassword '<new one>' # change the password (re-deploys the revision)
 ```
 
-Sharing the URL: sign-in is required (single-tenant Entra app registration `voicetester-web`), so anyone in the tenant can
-open it. Everyone who uses it drives your agents with the app's identity, so treat access as access to the project.
-Secrets: the app registration's client secret is stored as a Container App secret and rotates each time `deploy.ps1` runs.
-Smoke test the deployment without going through sign-in:
-`az containerapp exec -g rg-voice-tester -n voicetester-app --command "python selftest.py handoff-agent"`.
+Sharing the URL: anyone with the password can use the app and drive your agents with the app's identity, so treat the
+password as access to the project. Smoke test the deployment:
+`az containerapp exec -g rg-voice-tester -n voicetester-app --command "python selftest.py handoff-agent 8000 order-tracking"`.
 The browser needs HTTPS for the microphone (ACA provides it); the mic path was not exercised in the build environment.
 
 ## Known limitations

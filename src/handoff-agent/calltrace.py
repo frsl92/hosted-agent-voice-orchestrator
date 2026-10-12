@@ -14,7 +14,7 @@ from typing import Any
 
 logger = logging.getLogger("calltrace")
 
-MAX_TEXT = 600
+MAX_TEXT = 2000
 
 
 def _clip(value: Any) -> Any:

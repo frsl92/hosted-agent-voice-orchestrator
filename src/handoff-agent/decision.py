@@ -99,11 +99,12 @@ class DecisionClient:
         self._http = http or httpx.AsyncClient(timeout=timeout)
         self._max_retries = max_retries
 
-    async def ask(self, state: str, questions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    async def ask(self, state: str, questions: dict[str, dict[str, Any]], purpose: str = "") -> dict[str, Any]:
         """Send one request with several questions; return ``answers`` keyed by question name."""
         if not self._endpoint:
             raise DecisionError("Decision-1 endpoint is not configured (FOUNDRY_PROJECT_ENDPOINT).")
         body = {"model": self._deployment, "state": state, "questions": questions}
+        names = list(questions)
         url = f"{self._endpoint}{DECISION_PATH}"
         last: Exception | None = None
         started = time.perf_counter()
@@ -118,18 +119,18 @@ class DecisionClient:
                 if resp.status_code != 200:
                     raise DecisionError(f"Decision-1 returned {resp.status_code}: {resp.text[:200]}")
                 answers = resp.json()["answers"]
-                emit("decision.call", model=self._deployment, questions=list(questions), answers=answers,
-                     attempts=attempt + 1, ms=elapsed_ms(started))
+                emit("decision.call", purpose=purpose, model=self._deployment, questions=names, request=body,
+                     answers=answers, attempts=attempt + 1, ms=elapsed_ms(started))
                 return answers
             except DecisionError as exc:
-                emit("decision.call", model=self._deployment, questions=list(questions), error=str(exc),
-                     ms=elapsed_ms(started))
+                emit("decision.call", purpose=purpose, model=self._deployment, questions=names, request=body,
+                     error=str(exc), ms=elapsed_ms(started))
                 raise
             except (httpx.HTTPError, KeyError, ValueError) as exc:
                 last = exc
                 await asyncio.sleep(min(2**attempt * 0.4, 3.0))
-        emit("decision.call", model=self._deployment, questions=list(questions), error=str(last),
-             ms=elapsed_ms(started))
+        emit("decision.call", purpose=purpose, model=self._deployment, questions=names, request=body,
+             error=str(last), ms=elapsed_ms(started))
         raise DecisionError(f"Decision-1 call failed: {last}")
 
     async def analyze_turn(self, transcript: str) -> TurnAnalysis:
@@ -159,7 +160,7 @@ class DecisionClient:
             },
         }
         try:
-            a = await self.ask(transcript, questions)
+            a = await self.ask(transcript, questions, "analyze_turn")
             primary = a["primary_topic"]
             return TurnAnalysis(
                 billing=float(a["billing"]["noul"]),
@@ -195,7 +196,7 @@ class DecisionClient:
             },
         }
         try:
-            a = await self.ask(transcript, questions)
+            a = await self.ask(transcript, questions, f"on_topic:{topic}")
             return float(a["other_topic"]["noul"]), float(a["resolved"]["noul"]), True
         except (DecisionError, KeyError, TypeError, ValueError) as exc:
             logger.warning("on_topic guard failed, staying with current agent: %s", exc)
@@ -215,7 +216,7 @@ class DecisionClient:
             }
         }
         try:
-            a = (await self.ask(transcript, questions))["confirmation"]
+            a = (await self.ask(transcript, questions, "confirmation"))["confirmation"]
             if float(a.get("confidence", 0.0)) < CONFIRM_THRESHOLD:
                 return "neither"
             return a["choice"]

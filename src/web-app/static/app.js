@@ -2,66 +2,89 @@
 
 const $ = (id) => document.getElementById(id);
 const state = {
-  config: null, agent: null, sample: null, scriptIdx: 0,
-  ws: null, connected: false, responding: false,
-  t0: null, traces: [], handoffs: 0,
-  micOn: false, ctx: null, micStream: null, micNode: null, playHead: 0, sources: new Set(),
-  agentBubble: null, waiters: [],
+  config: null, agent: null, mode: "text", sample: null, scriptIdx: 0,
+  ws: null, session: null, connected: false, responding: false, callActive: false, callEnded: false, muted: false,
+  t0: null, traces: [], activeLabel: "–",
+  ctx: null, micStream: null, micNode: null, micAnalyser: null, outAnalyser: null, playHead: 0, sources: new Set(),
+  agentBubble: null, pendingBubble: null, waiters: [], orb: "idle", orbTimer: null, turnToken: 0, gen: 0,
 };
 
 // ------------------------------------------------------------------ setup
 
 async function init() {
-  state.config = await (await fetch("/api/config")).json();
+  const res = await fetch("/api/config");
+  if (res.status === 401) { location.href = "/login"; return; }
+  state.config = await res.json();
   $("project").textContent = `Project ${state.config.project} · Foundry hosted agents · Voice Live · Microsoft-Decision-1`;
-  renderAgents();
-  selectAgent(state.config.agents[0].id);
-  $("startBtn").onclick = startSession;
-  $("endBtn").onclick = () => endSession("Session ended.");
-  $("composer").onsubmit = (e) => { e.preventDefault(); sendText($("textInput").value); $("textInput").value = ""; };
-  $("micBtn").onclick = toggleMic;
+  state.agent = state.config.agents[0].id;
+  Viz.init({ flow: $("flowVisual"), timeline: $("timeline"), decisions: $("decisions"), onCounts: onCounts });
+
+  renderSeg("agentSeg", state.config.agents, () => state.agent, (id) => { state.agent = id; changed(); });
+  renderSeg("modeSeg", state.config.modes, () => state.mode, (id) => { state.mode = id; changed(); });
+  renderSamples();
+
+  $("newBtn").onclick = () => newConversation();
+  $("logoutBtn").onclick = async () => { await fetch("/logout", { method: "POST" }); location.href = "/login"; };
+  $("composer").onsubmit = (e) => { e.preventDefault(); const v = $("textInput").value; $("textInput").value = ""; sendText(v); };
   $("cancelBtn").onclick = () => send({ type: "cancel" });
-  $("speakToggle").onchange = () => send({ type: "audio_out", enabled: $("speakToggle").checked });
+  $("callBtn").onclick = startCall;
+  $("hangBtn").onclick = () => endCall();
+  $("muteBtn").onclick = toggleMute;
   $("scriptNext").onclick = scriptNext;
   $("scriptAll").onclick = scriptAll;
   $("scriptClose").onclick = () => { state.sample = null; $("script").hidden = true; renderSamples(); };
-  $("traceClear").onclick = clearTrace;
   $("traceDownload").onclick = downloadTrace;
   document.querySelectorAll("#filters input[data-src]").forEach((cb) => (cb.onchange = renderTrace));
-  setStatus("Not connected", "");
+  document.querySelectorAll(".tab").forEach((t) => (t.onclick = () => selectTab(t.dataset.tab)));
+  window.addEventListener("beforeunload", () => { if (state.ws) state.ws.close(); });
+  newConversation();
 }
 
-function agentCfg() { return state.config.agents.find((a) => a.id === state.agent); }
+function selectTab(name) {
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
+  document.querySelectorAll(".pane").forEach((p) => p.classList.toggle("active", p.id === "pane" + name[0].toUpperCase() + name.slice(1)));
+  if (name === "trace") { const b = $("trace"); b.scrollTop = b.scrollHeight; }
+}
 
-function renderAgents() {
-  const box = $("agents");
+function renderSeg(id, items, current, onPick) {
+  const box = $(id);
   box.innerHTML = "";
-  for (const a of state.config.agents) {
-    const el = document.createElement("div");
-    el.className = "card" + (a.id === state.agent ? " selected" : "");
-    el.innerHTML = `<b></b><small></small><div class="desc"></div>`;
-    el.querySelector("b").textContent = a.name;
-    el.querySelector("small").textContent = a.tagline;
-    el.querySelector(".desc").textContent = a.description;
-    el.onclick = () => selectAgent(a.id);
-    box.appendChild(el);
+  for (const it of items) {
+    const b = document.createElement("button");
+    b.textContent = it.name;
+    b.title = it.tagline || it.description || "";
+    b.className = it.id === current() ? "active" : "";
+    b.onclick = () => {
+      if (it.id === current()) return;
+      onPick(it.id);
+      renderSeg(id, items, current, onPick);
+    };
+    box.appendChild(b);
   }
 }
 
-function selectAgent(id) {
-  if (state.agent === id) return;
-  if (state.connected) endSession("Session ended (agent changed).");
-  state.agent = id;
-  state.sample = null;
-  $("script").hidden = true;
-  renderAgents();
-  renderSamples();
+const agentCfg = () => state.config.agents.find((a) => a.id === state.agent);
+
+function changed() {
+  renderAgentInfo();
+  newConversation();
+}
+
+function renderAgentInfo() {
+  const a = agentCfg();
+  const m = state.config.modes.find((x) => x.id === state.mode);
+  $("agentInfo").innerHTML = "";
+  const b = document.createElement("b"); b.textContent = a.name;
+  const t = document.createElement("span"); t.className = "tag"; t.textContent = a.tagline;
+  const d = document.createElement("p"); d.textContent = a.description;
+  const mm = document.createElement("small"); mm.textContent = `${m.name} experience: ${m.description}`;
+  $("agentInfo").append(b, t, d, mm);
 }
 
 function renderSamples() {
   const box = $("samples");
   box.innerHTML = "";
-  for (const s of agentCfg().samples) {
+  for (const s of state.config.samples) {
     const el = document.createElement("div");
     el.className = "card" + (state.sample && state.sample.id === s.id ? " selected" : "");
     el.innerHTML = `<b></b><div class="desc"></div>`;
@@ -72,9 +95,116 @@ function renderSamples() {
   }
 }
 
+// ------------------------------------------------------------------ conversation lifecycle
+
+const hasContent = () => state.traces.length > 0 || state.connected || !!document.querySelector(".msg");
+
+// Close whatever is open, wipe every pane and (in text mode) get a fresh session ready.
+function newConversation() {
+  state.gen++;
+  closeSession();
+  state.callActive = state.callEnded = state.muted = false;
+  state.traces = []; state.t0 = null; state.activeLabel = "–";
+  state.scriptIdx = 0;
+  $("chat").innerHTML = `<div class="empty">Type a message below, or load a sample conversation from the left.</div>`;
+  $("captions").innerHTML = `<div class="empty">Captions appear here as you talk. They are for reference only — the conversation is voice.</div>`;
+  $("trace").innerHTML = "";
+  ["mActive", "mFirst", "mTotal"].forEach((i) => ($(i).textContent = "–"));
+  $("decCount").textContent = "0";
+  $("mCount").textContent = "0";
+  Viz.reset(agentCfg().kind);
+  $("mCountLabel").textContent = agentCfg().kind === "handoff" ? "Handoffs" : "Tasks";
+  renderAgentInfo();
+
+  const voice = state.mode === "voice";
+  $("textView").hidden = voice;
+  $("voiceView").hidden = !voice;
+  renderCallButtons();
+  setOrb("idle", "Press <b>Start call</b> and speak");
+  if (state.sample) renderScript();
+  setReady(false);
+  setStatus("No conversation yet", "");
+  if (!voice) {
+    setStatus("Connecting…", "busy");
+    ensureSession().then(() => { $("textInput").focus(); }).catch(() => {});
+  }
+}
+
+function closeSession() {
+  const ws = state.ws;
+  state.ws = null; state.session = null; state.connected = false; state.responding = false;
+  state.agentBubble = state.pendingBubble = null;
+  if (ws) { ws.onclose = ws.onerror = ws.onmessage = null; try { ws.close(); } catch (_) {} }
+  stopMic();
+  stopPlayback();
+  state.waiters.splice(0).forEach((r) => r());
+}
+
+function ensureSession() {
+  if (state.session) return state.session;
+  const gen = state.gen;
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const url = `${proto}://${location.host}/ws/session?agent=${encodeURIComponent(state.agent)}&mode=${state.mode}`;
+  setStatus("Connecting…", "busy");
+  state.session = new Promise((resolve, reject) => {
+    const ws = new WebSocket(url);
+    ws.binaryType = "arraybuffer";
+    state.ws = ws;
+    ws.onmessage = (e) => {
+      if (gen !== state.gen) return;
+      if (typeof e.data !== "string") return playPcm(e.data);
+      const m = JSON.parse(e.data);
+      if (m.type === "ready") { state.connected = true; setReady(true); resolve(); }
+      onMessage(m);
+    };
+    ws.onclose = (e) => {
+      if (gen !== state.gen) return;
+      const wasConnected = state.connected;
+      state.session = null; state.ws = null; state.connected = false; state.responding = false;
+      stopMic(); setReady(false);
+      state.waiters.splice(0).forEach((r) => r());
+      if (e.code === 4401) { location.href = "/login"; return; }
+      setStatus(wasConnected ? "Disconnected" : "Connection failed", wasConnected ? "" : "err");
+      if (wasConnected) { note("The session ended."); if (state.callActive) endCall(true); setOrb("idle", "Session ended"); }
+      reject(new Error("closed"));
+    };
+    ws.onerror = () => { if (gen === state.gen) setStatus("Connection error", "err"); };
+  });
+  state.session.catch(() => {});
+  return state.session;
+}
+
+function setReady(on) {
+  const voice = state.mode === "voice";
+  $("textInput").disabled = voice;
+  $("sendBtn").disabled = voice;
+  $("cancelBtn").disabled = !on || !state.responding;
+  if (on) setStatus(`Connected · ${agentCfg().name}`, "on");
+  if (state.sample) renderScript();
+}
+
+function send(obj) {
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) { state.ws.send(JSON.stringify(obj)); return true; }
+  return false;
+}
+
+async function sendText(text) {
+  text = (text || "").trim();
+  if (!text || state.mode !== "text") return false;
+  if (state.responding) { note("The agent is still answering — wait or press ■ to stop it."); return false; }
+  try { await ensureSession(); } catch (_) { return false; }
+  state.responding = true;
+  $("cancelBtn").disabled = false;
+  if (state.sample) renderScript();
+  state.pendingBubble = addBubble("agent pending", "Agent", state.traces.some((t) => t.source === "agent") ? "thinking…" : "warming up the agent — the first answer can take ~10 s…");
+  setStatus("Agent working…", "busy");
+  return send({ type: "text", text });
+}
+
 // ------------------------------------------------------------------ sample scripts
 
 function selectSample(s) {
+  if (hasContent()) newConversation();
   state.sample = s;
   state.scriptIdx = 0;
   $("script").hidden = false;
@@ -84,19 +214,23 @@ function selectSample(s) {
 }
 
 function renderScript() {
+  const voice = state.mode === "voice";
   const ol = $("scriptTurns");
   ol.innerHTML = "";
+  ol.className = voice ? "" : "clickable";
+  $("scriptHint").textContent = voice
+    ? "Say these lines in order after you start the call. The next line is highlighted as you speak."
+    : "Click a line to send it, or use the buttons to step through the whole conversation.";
+  $("scriptNext").hidden = $("scriptAll").hidden = voice;
   state.sample.turns.forEach((t, i) => {
     const li = document.createElement("li");
     li.textContent = t;
     li.className = i < state.scriptIdx ? "done" : i === state.scriptIdx ? "next" : "";
-    li.title = "Click to send this line";
-    li.onclick = () => sendText(t);
+    if (!voice) li.onclick = () => { state.scriptIdx = i + 1; renderScript(); sendText(t); };
     ol.appendChild(li);
   });
   const finished = state.scriptIdx >= state.sample.turns.length;
-  $("scriptNext").disabled = !state.connected || finished;
-  $("scriptAll").disabled = !state.connected || finished;
+  $("scriptNext").disabled = $("scriptAll").disabled = finished || state.responding;
 }
 
 function scriptNext() {
@@ -107,129 +241,87 @@ function scriptNext() {
 }
 
 async function scriptAll() {
+  const gen = state.gen;
   $("scriptAll").disabled = $("scriptNext").disabled = true;
-  while (state.connected && state.sample && state.scriptIdx < state.sample.turns.length) {
+  while (gen === state.gen && state.sample && state.scriptIdx < state.sample.turns.length) {
     const text = state.sample.turns[state.scriptIdx++];
     renderScript();
-    if (!sendText(text)) break;
-    await waitForAgentDone();
+    if (!(await sendText(text))) break;
+    await new Promise((r) => state.waiters.push(r));
     await new Promise((r) => setTimeout(r, 700));
   }
-  if (state.sample) renderScript();
+  if (gen === state.gen && state.sample) renderScript();
 }
 
-function waitForAgentDone() {
-  return new Promise((resolve) => state.waiters.push(resolve));
-}
-
-// ------------------------------------------------------------------ session
+// ------------------------------------------------------------------ status helpers
 
 function setStatus(text, cls) {
   $("statusText").textContent = text;
   $("statusDot").className = "dot " + cls;
 }
 
-function setConnectedUi(on) {
-  state.connected = on;
-  $("startBtn").disabled = on;
-  $("endBtn").disabled = !on;
-  $("textInput").disabled = !on;
-  $("sendBtn").disabled = !on;
-  $("micBtn").disabled = !on;
-  $("cancelBtn").disabled = !on;
-  if (state.sample) renderScript();
-}
-
-function startSession() {
-  clearChat();
-  clearTrace();
-  state.t0 = null;
-  const proto = location.protocol === "https:" ? "wss" : "ws";
-  const url = `${proto}://${location.host}/ws/session?agent=${encodeURIComponent(state.agent)}&audio=${$("speakToggle").checked}`;
-  setStatus("Connecting…", "busy");
-  $("startBtn").disabled = true;
-  const ws = new WebSocket(url);
-  ws.binaryType = "arraybuffer";
-  state.ws = ws;
-  ws.onopen = () => { setConnectedUi(true); $("textInput").focus(); };
-  ws.onmessage = (e) => (typeof e.data === "string" ? onMessage(JSON.parse(e.data)) : playPcm(e.data));
-  ws.onclose = () => { if (state.ws === ws) finishSession("Disconnected."); };
-  ws.onerror = () => setStatus("Connection error", "err");
-}
-
-function endSession(note) {
-  const ws = state.ws;
-  state.ws = null;
-  if (ws) ws.close();
-  finishSession(note);
-}
-
-function finishSession(note) {
-  stopMic();
-  stopPlayback();
-  state.ws = null;
-  state.responding = false;
-  state.agentBubble = null;
-  state.waiters.splice(0).forEach((r) => r());
-  setConnectedUi(false);
-  setStatus("Not connected", "");
-  if (note) addNote(note);
-}
-
-function send(obj) {
-  if (state.ws && state.ws.readyState === WebSocket.OPEN) { state.ws.send(JSON.stringify(obj)); return true; }
-  return false;
-}
-
-function sendText(text) {
-  text = (text || "").trim();
-  if (!text || !state.connected) return false;
-  if (state.responding) { addNote("The agent is still answering — wait or press ■ to stop it."); return false; }
-  return send({ type: "text", text });
+function onCounts(c) {
+  $("decCount").textContent = c.decisions;
+  $("mCount").textContent = c.kind === "handoff" ? c.handoffs : c.tasks;
 }
 
 // ------------------------------------------------------------------ incoming messages
 
+const chatEl = () => (state.mode === "voice" ? $("captions") : $("chat"));
+
 function onMessage(m) {
   switch (m.type) {
     case "ready":
-      setStatus(`Connected · ${m.agent}`, "on");
-      $("sessionInfo").textContent = `session ${m.voice_session_id}`;
       break;
     case "user_text":
     case "user_transcript":
       addBubble("user", "You", m.text);
+      if (m.type === "user_transcript") {
+        advanceScript();
+        setOrb("thinking", "Thinking…");
+        state.responding = true;
+      }
       break;
     case "agent_start":
       state.responding = true;
-      setStatus("Agent speaking…", "busy");
+      $("cancelBtn").disabled = false;
+      clearPending();
+      setStatus("Agent answering…", "busy");
       state.agentBubble = addBubble("agent partial", "Agent", "");
+      if (state.mode === "voice") setOrb("thinking", "Thinking…");
       break;
     case "agent_delta":
-      if (!state.agentBubble) state.agentBubble = addBubble("agent partial", "Agent", "");
+      if (!state.agentBubble) { clearPending(); state.agentBubble = addBubble("agent partial", "Agent", ""); }
       state.agentBubble.body.textContent += m.text;
       scrollChat();
       break;
     case "agent_done":
       state.responding = false;
-      setStatus(`Connected · ${state.agent}`, "on");
+      $("cancelBtn").disabled = true;
+      clearPending();
+      setStatus(`Connected · ${agentCfg().name}`, "on");
       if (state.agentBubble) {
         if (m.text) state.agentBubble.body.textContent = m.text;
         if (!state.agentBubble.body.textContent) state.agentBubble.el.remove();
         state.agentBubble.el.classList.remove("partial");
         state.agentBubble = null;
       }
+      if (state.mode === "voice") afterPlayback();
       state.waiters.splice(0).forEach((r) => r());
+      if (state.sample) renderScript();
       break;
     case "interrupt":
       stopPlayback();
+      if (state.mode === "voice") setOrb("hearing", "Listening…");
       break;
     case "busy":
-      addNote("The agent is still answering.");
+      note("The agent is still answering.");
       break;
     case "error":
+      clearPending();
       addBubble("err", "Error", m.message);
       state.responding = false;
+      $("cancelBtn").disabled = true;
       state.waiters.splice(0).forEach((r) => r());
       break;
     case "trace":
@@ -238,18 +330,28 @@ function onMessage(m) {
   }
 }
 
+function advanceScript() {
+  if (state.sample && state.scriptIdx < state.sample.turns.length) { state.scriptIdx++; renderScript(); }
+}
+
+function clearPending() {
+  if (state.pendingBubble) { state.pendingBubble.el.remove(); state.pendingBubble = null; }
+}
+
 // ------------------------------------------------------------------ chat
 
-function clearChat() { $("chat").innerHTML = ""; }
-function scrollChat() { const c = $("chat"); c.scrollTop = c.scrollHeight; }
-function addNote(text) {
+function scrollChat() { const c = chatEl(); c.scrollTop = c.scrollHeight; }
+function dropEmpty() { const e = chatEl().querySelector(".empty"); if (e) e.remove(); }
+function note(text) {
+  dropEmpty();
   const el = document.createElement("div");
   el.className = "note";
   el.textContent = text;
-  $("chat").appendChild(el);
+  chatEl().appendChild(el);
   scrollChat();
 }
 function addBubble(cls, who, text) {
+  dropEmpty();
   const el = document.createElement("div");
   el.className = "msg " + cls;
   const w = document.createElement("span");
@@ -258,9 +360,106 @@ function addBubble(cls, who, text) {
   const body = document.createElement("span");
   body.textContent = text;
   el.append(w, body);
-  $("chat").appendChild(el);
+  chatEl().appendChild(el);
   scrollChat();
   return { el, body };
+}
+
+// ------------------------------------------------------------------ voice call
+
+function renderCallButtons() {
+  const active = state.callActive;
+  $("callBtn").hidden = active;
+  $("callBtn").textContent = state.callEnded ? "📞 Start a new call" : "📞 Start call";
+  $("muteBtn").hidden = $("hangBtn").hidden = !active;
+  $("muteBtn").textContent = state.muted ? "🔇 Unmute" : "🎤 Mute";
+  $("muteBtn").classList.toggle("on", state.muted);
+}
+
+async function startCall() {
+  if (state.callEnded) newConversation();
+  const gen = state.gen;
+  state.callActive = true;
+  renderCallButtons();
+  setOrb("idle", "Connecting…");
+  try {
+    await ensureAudio();
+    state.micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    await ensureSession();
+    if (gen !== state.gen) return;
+    const src = state.ctx.createMediaStreamSource(state.micStream);
+    state.micNode = new AudioWorkletNode(state.ctx, "mic-processor");
+    state.micNode.port.onmessage = (e) => {
+      if (state.ws && state.ws.readyState === WebSocket.OPEN && !state.muted) state.ws.send(e.data);
+    };
+    state.micAnalyser = state.ctx.createAnalyser();
+    state.micAnalyser.fftSize = 512;
+    src.connect(state.micNode);
+    src.connect(state.micAnalyser);
+    setOrb("listening", state.sample ? "Listening — say the highlighted line" : "Listening — go ahead and speak");
+    levelLoop(gen);
+  } catch (err) {
+    if (gen !== state.gen) return;
+    stopMic();
+    state.callActive = false;
+    renderCallButtons();
+    setOrb("idle", "Press <b>Start call</b> and speak");
+    addBubble("err", "Microphone", `Could not start the call: ${err.message || err}`);
+  }
+}
+
+function endCall(silent) {
+  state.gen++; // detaches the old socket's handlers
+  closeSession();
+  state.callActive = false;
+  state.callEnded = true;
+  renderCallButtons();
+  setOrb("idle", "Call ended — transcript and diagnostics are still on screen");
+  setStatus("Call ended", "");
+  if (!silent) note("Call ended.");
+}
+
+function toggleMute() {
+  state.muted = !state.muted;
+  if (state.micStream) state.micStream.getAudioTracks().forEach((t) => (t.enabled = !state.muted));
+  renderCallButtons();
+}
+
+function setOrb(name, label) {
+  state.orb = name;
+  clearTimeout(state.orbTimer);
+  $("orb").className = "orb " + name;
+  if (label != null) $("orbLabel").innerHTML = label;
+}
+
+// after the last audio chunk has been scheduled, wait for it to finish playing before "listening" again
+function afterPlayback() {
+  const token = ++state.turnToken;
+  const remaining = state.ctx ? Math.max(0, state.playHead - state.ctx.currentTime) : 0;
+  clearTimeout(state.orbTimer);
+  state.orbTimer = setTimeout(() => {
+    if (token === state.turnToken && state.callActive) setOrb("listening", "Listening…");
+  }, remaining * 1000 + 250);
+}
+
+function levelLoop(gen) {
+  const buf = new Uint8Array(256);
+  const tick = () => {
+    if (gen !== state.gen || !state.callActive) { $("orb").style.setProperty("--lvl", 0); return; }
+    const an = state.orb === "speaking" ? state.outAnalyser : state.micAnalyser;
+    let lvl = 0;
+    if (an) {
+      an.getByteTimeDomainData(buf);
+      let s = 0;
+      for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; s += v * v; }
+      lvl = Math.min(1, Math.sqrt(s / buf.length) * 4);
+    }
+    $("orb").style.setProperty("--lvl", lvl.toFixed(2));
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
 
 // ------------------------------------------------------------------ audio
@@ -269,52 +468,30 @@ async function ensureAudio() {
   if (!state.ctx) {
     state.ctx = new AudioContext({ sampleRate: 24000 });
     await state.ctx.audioWorklet.addModule("/static/mic-worklet.js");
+    state.outAnalyser = state.ctx.createAnalyser();
+    state.outAnalyser.fftSize = 512;
+    state.outAnalyser.connect(state.ctx.destination);
   }
   if (state.ctx.state === "suspended") await state.ctx.resume();
-}
-
-async function toggleMic() {
-  if (state.micOn) { stopMic(); return; }
-  try {
-    await ensureAudio();
-    state.micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
-    const src = state.ctx.createMediaStreamSource(state.micStream);
-    state.micNode = new AudioWorkletNode(state.ctx, "mic-processor");
-    state.micNode.port.onmessage = (e) => {
-      if (state.ws && state.ws.readyState === WebSocket.OPEN) state.ws.send(e.data);
-    };
-    src.connect(state.micNode);
-    state.micOn = true;
-    $("micBtn").classList.add("on");
-    $("speakToggle").checked = true;
-    send({ type: "audio_out", enabled: true });
-    addNote("Microphone on — just speak. Replies are spoken.");
-  } catch (err) {
-    addBubble("err", "Microphone", `Could not start the microphone: ${err.message}`);
-  }
 }
 
 function stopMic() {
   if (state.micNode) { state.micNode.disconnect(); state.micNode = null; }
   if (state.micStream) { state.micStream.getTracks().forEach((t) => t.stop()); state.micStream = null; }
-  state.micOn = false;
-  $("micBtn").classList.remove("on");
+  state.micAnalyser = null;
 }
 
 function playPcm(buf) {
-  if (!state.ctx || !$("speakToggle").checked) {
-    if (!state.ctx) ensureAudio().then(() => playPcm(buf));
-    return;
-  }
+  if (!state.ctx || state.mode !== "voice" || !state.callActive) return;
+  if (state.orb !== "speaking") setOrb("speaking", "Agent is speaking…");
+  state.turnToken++;
   const pcm = new Int16Array(buf);
   const audio = state.ctx.createBuffer(1, pcm.length, 24000);
   const ch = audio.getChannelData(0);
   for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
   const src = state.ctx.createBufferSource();
   src.buffer = audio;
-  src.connect(state.ctx.destination);
+  src.connect(state.outAnalyser);
   const now = state.ctx.currentTime;
   if (state.playHead < now + 0.02) state.playHead = now + 0.05;
   src.start(state.playHead);
@@ -333,18 +510,26 @@ function stopPlayback() {
 
 function addTrace(ev) {
   if (state.t0 === null) state.t0 = ev.t;
+  const last = state.traces[state.traces.length - 1];
   state.traces.push(ev);
-  state.traces.sort((a, b) => a.t - b.t);
   updateMetrics(ev);
-  renderTrace();
+  Viz.onTrace(ev);
+  voiceOrbFromTrace(ev);
+  if (last && ev.t < last.t) { state.traces.sort((a, b) => a.t - b.t); renderTrace(); }
+  else if (allowedSources().has(ev.source)) { appendRow(ev); }
+}
+
+function voiceOrbFromTrace(ev) {
+  if (state.mode !== "voice" || !state.callActive || ev.source !== "voice") return;
+  if (ev.kind === "speech.started") { setOrb("hearing", "Hearing you…"); state.turnToken++; }
+  else if (ev.kind === "speech.stopped") setOrb("thinking", "Thinking…");
 }
 
 function updateMetrics(ev) {
   const d = ev.data || {};
   if (ev.source === "agent") {
-    if (ev.kind === "handoff" && !d.refused) { state.handoffs++; $("mHandoffs").textContent = state.handoffs; }
     if (ev.kind === "handoff" && !d.refused) $("mActive").textContent = d.target;
-    if (ev.kind === "turn.start" || ev.kind === "turn.end") if (d.agent) $("mActive").textContent = d.agent;
+    if ((ev.kind === "turn.start" || ev.kind === "turn.end") && d.agent) $("mActive").textContent = d.agent;
     if (ev.kind === "phase") $("mActive").textContent = d.phase;
   }
   if (ev.source === "voice") {
@@ -369,7 +554,7 @@ function summarize(ev) {
       (d.topics && d.topics.length ? ` → [${d.topics.join(", ")}]` : "") + (d.ok === false ? " (not ok)" : "");
   if (k === "decision.guard") return `[${d.agent}] other-topic ${fmt(d.other_topic)} · resolved ${fmt(d.resolved)}`;
   if (k === "decision.confirmation") return `verdict: ${d.verdict}`;
-  if (k === "decision.call") return `${d.model} · ${(d.questions || []).join(", ")} · ${d.ms} ms` + (d.error ? ` · ERROR ${d.error}` : "");
+  if (k === "decision.call") return `${d.purpose} · ${(d.questions || []).join(", ")} · ${d.ms} ms` + (d.error ? ` · ERROR ${d.error}` : "");
   if (k === "tool.call") {
     const args = Object.entries(d.args || {}).map(([a, b]) => `${a}=${fmt(b)}`).join(", ");
     return `${d.name}(${args}) → ${d.error ? "ERROR " + d.error : d.result}` + (d.ms != null ? `  · ${d.ms} ms` : "");
@@ -384,9 +569,8 @@ function summarize(ev) {
   if (k === "first.token" || k === "first.audio") return `${d.ms} ms after input`;
   if (k === "response.done") return `${d.status}${d.total_ms ? " · " + d.total_ms + " ms" : ""}${d.usage && d.usage.total_tokens ? " · " + d.usage.total_tokens + " tokens" : ""}`;
   if (k === "user.text" || k === "user.transcript") return `“${d.text}”`;
-  if (k === "session.created") return `${d.session_id} → agent session ${d.agent_session_id}`;
-  const entries = Object.entries(d).map(([a, b]) => `${a}=${fmt(b)}`).join(" ");
-  return entries;
+  if (k === "session.created") return `${d.mode || ""} ${d.session_id} → agent session ${d.agent_session_id}`;
+  return Object.entries(d).map(([a, b]) => `${a}=${fmt(b)}`).join(" ");
 }
 
 function isError(ev) {
@@ -394,53 +578,46 @@ function isError(ev) {
   return ev.kind === "error" || ev.kind === "warning" || ev.kind === "agent.error" || ev.kind === "plan.error" || ev.kind === "task.failed" || !!d.error;
 }
 
-function renderTrace() {
-  const allowed = new Set([...document.querySelectorAll("#filters input[data-src]")].filter((c) => c.checked).map((c) => c.dataset.src));
+const allowedSources = () => new Set([...document.querySelectorAll("#filters input[data-src]")].filter((c) => c.checked).map((c) => c.dataset.src));
+
+function appendRow(ev) {
   const box = $("trace");
-  const stick = $("autoscroll").checked;
-  box.innerHTML = "";
-  for (const ev of state.traces) {
-    if (!allowed.has(ev.source)) continue;
-    const row = document.createElement("div");
-    row.className = `row ${ev.source}` + (isError(ev) ? " err" : "") + (ev.kind === "handoff" && !(ev.data || {}).refused ? " hl" : "");
-    const top = document.createElement("div");
-    top.className = "top";
-    const ts = document.createElement("span");
-    ts.className = "ts";
-    ts.textContent = ((ev.t - state.t0) / 1000).toFixed(2) + "s";
-    const chip = document.createElement("span");
-    chip.className = "chip";
-    chip.textContent = ev.source;
-    const kind = document.createElement("span");
-    kind.className = "kind";
-    kind.textContent = ev.kind;
-    const sum = document.createElement("span");
-    sum.className = "sum";
-    sum.textContent = summarize(ev);
-    top.append(ts, chip, kind, sum);
-    const pre = document.createElement("pre");
-    pre.textContent = JSON.stringify(ev, null, 2);
-    row.append(top, pre);
-    row.onclick = () => row.classList.toggle("open");
-    box.appendChild(row);
-  }
-  if (stick) box.scrollTop = box.scrollHeight;
+  const row = document.createElement("div");
+  row.className = `row ${ev.source}` + (isError(ev) ? " err" : "") + (ev.kind === "handoff" && !(ev.data || {}).refused ? " hl" : "");
+  const top = document.createElement("div");
+  top.className = "top";
+  const ts = document.createElement("span");
+  ts.className = "ts";
+  ts.textContent = ((ev.t - state.t0) / 1000).toFixed(2) + "s";
+  const chip = document.createElement("span");
+  chip.className = "chip";
+  chip.textContent = ev.source;
+  const kind = document.createElement("span");
+  kind.className = "kind";
+  kind.textContent = ev.kind;
+  const sum = document.createElement("span");
+  sum.className = "sum";
+  sum.textContent = summarize(ev);
+  top.append(ts, chip, kind, sum);
+  const pre = document.createElement("pre");
+  pre.textContent = JSON.stringify(ev, null, 2);
+  row.append(top, pre);
+  row.onclick = () => row.classList.toggle("open");
+  box.appendChild(row);
+  if ($("autoscroll").checked) box.scrollTop = box.scrollHeight;
 }
 
-function clearTrace() {
-  state.traces = [];
-  state.handoffs = 0;
-  state.t0 = null;
-  ["mActive", "mFirst", "mTotal"].forEach((i) => ($(i).textContent = "–"));
-  $("mHandoffs").textContent = "0";
-  renderTrace();
+function renderTrace() {
+  const allowed = allowedSources();
+  $("trace").innerHTML = "";
+  for (const ev of state.traces) if (allowed.has(ev.source)) appendRow(ev);
 }
 
 function downloadTrace() {
-  const blob = new Blob([JSON.stringify({ agent: state.agent, events: state.traces }, null, 2)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify({ agent: state.agent, mode: state.mode, events: state.traces }, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `trace-${state.agent}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  a.download = `trace-${state.agent}-${state.mode}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
 }

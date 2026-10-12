@@ -7,10 +7,10 @@
      user-assigned identity + role assignments on the Foundry account).
   2. Builds the image in ACR (no local Docker needed).
   3. Deploys the container app.
-  4. Protects the app with Microsoft Entra sign-in (Container Apps built-in authentication),
-     restricted to the current tenant. Use -SkipAuth only for a throw-away private test.
+  4. Gates the app with a shared password (-AppPassword, stored as a Container Apps secret and
+     exposed to the app as APP_PASSWORD). Anyone who knows it can use the app and your agents.
 
-  Re-running the script is safe: it updates the image and keeps the existing app registration.
+  Re-running the script is safe. To change the password, re-run with a new -AppPassword.
 #>
 param(
   [string]$ResourceGroup = "rg-voice-tester",
@@ -20,7 +20,7 @@ param(
   [string]$FoundryAccountName = "flopes-swc-foundry",
   [string]$FoundryProjectName = "swc-project",
   [string]$Tag = (Get-Date -Format "yyyyMMddHHmmss"),
-  [switch]$SkipAuth
+  [string]$AppPassword = "meovoicedemo"
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,7 +37,7 @@ $common = @(
   "--resource-group", $ResourceGroup, "--template-file", $infra,
   "--parameters", "namePrefix=$NamePrefix", "location=$Location",
   "foundryResourceGroup=$FoundryResourceGroup", "foundryAccountName=$FoundryAccountName",
-  "foundryProjectName=$FoundryProjectName"
+  "foundryProjectName=$FoundryProjectName", "appPassword=$AppPassword"
 )
 
 Write-Host "==> Resource group $ResourceGroup ($Location)"
@@ -67,28 +67,11 @@ $app = Invoke-Az deployment group create @common "image=$image" --name "app-$Tag
 $appName = $app.appName.value
 $url = $app.appUrl.value
 
-if (-not $SkipAuth) {
-  Write-Host "==> Entra sign-in (built-in authentication)"
-  $tenant = (Invoke-Az account show --query tenantId --output tsv).Trim()
-  $displayName = "$NamePrefix-web"
-  $clientId = (Invoke-Az ad app list --display-name $displayName --query "[0].appId" --output tsv | Out-String).Trim()
-  if (-not $clientId) {
-    $clientId = (Invoke-Az ad app create --display-name $displayName --sign-in-audience AzureADMyOrg --query appId --output tsv).Trim()
-    Write-Host "    created app registration $clientId"
-  }
-  $redirect = "$url/.auth/login/aad/callback"
-  Invoke-Az ad app update --id $clientId --web-redirect-uris $redirect --enable-id-token-issuance true --output none
-  $secret = (Invoke-Az ad app credential reset --id $clientId --display-name "aca-easyauth" --years 1 --query password --output tsv).Trim()
-  Invoke-Az containerapp secret set -g $ResourceGroup -n $appName --secrets "aad-client-secret=$secret" --output none
-  Invoke-Az containerapp auth microsoft update -g $ResourceGroup -n $appName `
-    --client-id $clientId --client-secret-name aad-client-secret `
-    --issuer "https://login.microsoftonline.com/$tenant/v2.0" --yes --output none
-  Invoke-Az containerapp auth update -g $ResourceGroup -n $appName --enabled true `
-    --unauthenticated-client-action RedirectToLoginPage --redirect-provider aad --yes --output none
-  Write-Host "    sign-in required for tenant $tenant"
-}
-else {
-  Write-Warning "Authentication skipped: the URL is open to anyone and can talk to your agents."
+# Earlier versions used Entra built-in authentication; make sure it is switched off.
+$authOn = (& az containerapp auth show -g $ResourceGroup -n $appName --query "platform.enabled" --output tsv 2>$null | Out-String).Trim()
+if ($authOn -eq "true") {
+  Write-Host "==> Disabling the old Entra built-in authentication"
+  Invoke-Az containerapp auth update -g $ResourceGroup -n $appName --enabled false --yes --output none
 }
 
 Write-Host ""

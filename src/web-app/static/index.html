@@ -15,74 +15,98 @@
         <small id="project">Foundry hosted agents · Voice Live · Microsoft-Decision-1</small>
       </div>
     </div>
-    <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Not connected</span></div>
+    <div class="picker"><span class="label">Agent</span><div class="seg" id="agentSeg"></div></div>
+    <div class="picker"><span class="label">Experience</span><div class="seg" id="modeSeg"></div></div>
+    <span class="spacer"></span>
+    <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">No conversation yet</span></div>
+    <button id="newBtn" class="primary" title="Close the current session and start a clean one">＋ New conversation</button>
+    <button id="logoutBtn" class="ghost" title="Sign out">Sign out</button>
   </header>
 
   <main>
     <aside id="left">
       <section>
-        <h2>1 · Choose an agent</h2>
-        <div id="agents"></div>
+        <h2>About this agent</h2>
+        <div id="agentInfo" class="info"></div>
       </section>
       <section>
-        <h2>2 · Sample conversations</h2>
+        <h2>Sample conversations</h2>
+        <small class="hint">Same scripts for every agent. Pick one to load it.</small>
         <div id="samples"></div>
       </section>
     </aside>
 
     <section id="center">
-      <div id="sessionBar">
-        <button id="startBtn" class="primary">Start session</button>
-        <button id="endBtn" disabled>End session</button>
-        <label class="inline"><input type="checkbox" id="speakToggle" /> Speak replies</label>
-        <span id="sessionInfo" class="muted"></span>
-      </div>
-
       <div id="script" hidden>
         <div class="script-head">
           <strong id="scriptTitle"></strong>
           <span class="spacer"></span>
           <button id="scriptNext">Send next ▸</button>
           <button id="scriptAll">Run all ▸▸</button>
-          <button id="scriptClose" title="Close script">✕</button>
+          <button id="scriptClose" class="ghost" title="Close script">✕</button>
         </div>
+        <div id="scriptHint" class="hint"></div>
         <ol id="scriptTurns"></ol>
       </div>
 
-      <div id="chat"><div class="empty">Pick an agent and press <b>Start session</b>. Type, click a sample line, or use the microphone.</div></div>
+      <div id="textView" class="view">
+        <div id="chat" class="chat"><div class="empty">Type a message below, or load a sample conversation from the left.</div></div>
+        <form id="composer" autocomplete="off">
+          <input id="textInput" placeholder="Type a message…" />
+          <button id="sendBtn" class="primary">Send</button>
+          <button type="button" id="cancelBtn" title="Stop the agent's current answer" disabled>■</button>
+        </form>
+      </div>
 
-      <form id="composer" autocomplete="off">
-        <button type="button" id="micBtn" title="Toggle microphone" disabled>🎤</button>
-        <input id="textInput" placeholder="Type a message…" disabled />
-        <button id="sendBtn" class="primary" disabled>Send</button>
-        <button type="button" id="cancelBtn" disabled title="Stop the agent's current answer">■</button>
-      </form>
+      <div id="voiceView" class="view" hidden>
+        <div class="stage">
+          <div id="orb" class="orb idle"><div class="ring r1"></div><div class="ring r2"></div><div class="core">🎙</div></div>
+          <div id="orbLabel" class="orb-label">Press <b>Start call</b> and speak</div>
+          <div class="call-controls">
+            <button id="callBtn" class="primary big">📞 Start call</button>
+            <button id="muteBtn" class="big" hidden>🎤 Mute</button>
+            <button id="hangBtn" class="big danger" hidden>⏹ End call</button>
+          </div>
+        </div>
+        <div id="captions" class="chat captions"><div class="empty">Captions appear here as you talk. They are for reference only — the conversation is voice.</div></div>
+      </div>
     </section>
 
     <aside id="right">
-      <div class="trace-head">
-        <h2>Trace &amp; logs</h2>
+      <div class="tabs">
+        <button class="tab active" data-tab="flow">Flow</button>
+        <button class="tab" data-tab="decisions">Decision-1 <span id="decCount" class="badge">0</span></button>
+        <button class="tab" data-tab="trace">Trace</button>
         <span class="spacer"></span>
-        <button id="traceClear">Clear</button>
-        <button id="traceDownload">Download</button>
+        <button id="traceDownload" class="ghost" title="Download the full trace as JSON">⬇ Export</button>
       </div>
       <div id="metrics">
         <div><small>Active</small><b id="mActive">–</b></div>
         <div><small>First token</small><b id="mFirst">–</b></div>
         <div><small>Last turn</small><b id="mTotal">–</b></div>
-        <div><small>Handoffs</small><b id="mHandoffs">0</b></div>
+        <div><small id="mCountLabel">Handoffs</small><b id="mCount">0</b></div>
       </div>
-      <div id="filters">
-        <label><input type="checkbox" data-src="voice" checked /> <span class="chip voice">voice</span></label>
-        <label><input type="checkbox" data-src="agent" checked /> <span class="chip agent">agent</span></label>
-        <label><input type="checkbox" data-src="log" /> <span class="chip log">raw logs</span></label>
-        <label><input type="checkbox" data-src="system" checked /> <span class="chip system">system</span></label>
-        <label class="inline"><input type="checkbox" id="autoscroll" checked /> follow</label>
+
+      <div id="paneFlow" class="pane active">
+        <div id="flowVisual"></div>
+        <h3>Turn by turn</h3>
+        <div id="timeline"></div>
       </div>
-      <div id="trace"></div>
+      <div id="paneDecisions" class="pane"><div id="decisions"></div></div>
+      <div id="paneTrace" class="pane">
+        <div id="filters">
+          <label><input type="checkbox" data-src="voice" checked /> <span class="chip voice">voice</span></label>
+          <label><input type="checkbox" data-src="agent" checked /> <span class="chip agent">agent</span></label>
+          <label><input type="checkbox" data-src="log" /> <span class="chip log">raw logs</span></label>
+          <label><input type="checkbox" data-src="system" checked /> <span class="chip system">system</span></label>
+          <label class="inline"><input type="checkbox" id="autoscroll" checked /> follow</label>
+        </div>
+        <div id="trace"></div>
+      </div>
     </aside>
   </main>
 
+  <script src="/static/viz.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

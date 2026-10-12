@@ -220,16 +220,18 @@ class Orchestrator:
         logger.info("Guard[%s]: other_topic=%.2f resolved=%.2f ok=%s", active, other_p, resolved_p, ok)
         emit("decision.guard", agent=active, other_topic=other_p, resolved=resolved_p, ok=ok, queue=list(state["queue"]))
 
-        resolved = bool(state["pending_return"])
+        pending = bool(state["pending_return"])
+        resolved = pending
         state["pending_return"] = False
         noted: str | None = None
         if ok:
             other = _other(topic)
-            if other_p >= OTHER_TOPIC_THRESHOLD:
-                if other not in state["queue"]:
-                    state["queue"].append(other)
-                    noted = other
-            resolved = resolved or resolved_p >= RESOLVED_THRESHOLD
+            switched = other_p >= OTHER_TOPIC_THRESHOLD
+            if switched and other not in state["queue"]:
+                state["queue"].append(other)
+                noted = other
+            # A deferred return only stands if the customer did not just ask something more on this topic.
+            resolved = resolved_p >= RESOLVED_THRESHOLD or (pending and switched)
 
         if resolved:
             return await self._advance(state, turn)
@@ -244,6 +246,12 @@ class Orchestrator:
         if not self._handoff(state, turn, ROUTER):
             return _Plan(active)
         analysis = await self._decision.analyze_turn(self._transcript(state))
+        emit(
+            "decision.analyze", billing=analysis.billing, order_status=analysis.order_status,
+            primary_topic=analysis.primary_topic, primary_confidence=analysis.primary_confidence,
+            wants_to_end=analysis.wants_to_end, ok=analysis.ok,
+            topics=list(analysis.detected_topics) if analysis.ok else [],
+        )
         if analysis.ok and analysis.confident_end:
             return _Plan(ROUTER, P.DIRECTIVE_GOODBYE, ends_call=True)
         return _Plan(ROUTER, P.DIRECTIVE_ANYTHING_ELSE)

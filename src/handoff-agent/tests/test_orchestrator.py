@@ -198,11 +198,21 @@ async def test_no_bounce_back_max_one_handoff_per_turn(state):
     assert [c["agent"] for c in runner.calls] == [ORDERS]
     assert state["active_agent"] == ORDERS
     assert state["pending_return"] is True
-    # next turn: the deferred return is honoured
-    orch._decision.guards.append((0.0, 0.0, True))
+    # next turn: the customer just acknowledges, so the deferred return is honoured
+    orch._decision.guards.append((0.0, 0.9, True))
     orch._decision.analyses.append(analysis())
     await say(orch, state, "ok")
     assert state["active_agent"] == ROUTER
+    assert state["pending_return"] is False
+
+
+async def test_deferred_return_cancelled_by_follow_up_question(state):
+    state["active_agent"] = ORDERS
+    state["pending_return"] = True
+    orch, _, runner = make(guards=[(0.0, 0.0, True)])
+    await say(orch, state, "what's the tracking number?")
+    assert [c["agent"] for c in runner.calls] == [ORDERS]
+    assert state["active_agent"] == ORDERS
     assert state["pending_return"] is False
 
 

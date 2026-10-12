@@ -13,6 +13,7 @@ import aiohttp
 from azure.ai.voicelive.aio import VoiceLiveConnection, connect
 from azure.ai.voicelive.models import (
     AudioEchoCancellation,
+    AudioInputTranscriptionOptions,
     AudioNoiseReduction,
     AzureStandardVoice,
     InputAudioFormat,
@@ -70,7 +71,8 @@ class VoiceBridge:
         project_name: str,
         project_endpoint: str,
         agent_name: str,
-        audio_out: bool = False,
+        mode: str = "text",
+        audio_out: bool | None = None,
     ) -> None:
         self._sink = sink
         self._cred = credential
@@ -79,7 +81,9 @@ class VoiceBridge:
         self._project_name = project_name
         self._project_endpoint = project_endpoint
         self.agent_name = agent_name
-        self.audio_out = audio_out
+        self.mode = "voice" if mode == "voice" else "text"
+        # Voice sessions always speak; text sessions never do.
+        self.audio_out = (self.mode == "voice") if audio_out is None else audio_out
         self._conn: VoiceLiveConnection | None = None
         self._lock = asyncio.Lock()
         self._tailer_task: asyncio.Task[None] | None = None
@@ -124,13 +128,15 @@ class VoiceBridge:
                         with contextlib.suppress(asyncio.CancelledError, Exception):
                             await task
 
-    @staticmethod
-    def _session_config() -> RequestSession:
+    def _session_config(self) -> RequestSession:
+        if self.mode == "text":
+            return RequestSession(modalities=[Modality.TEXT])
         return RequestSession(
             modalities=[Modality.TEXT, Modality.AUDIO],
             voice=AzureStandardVoice(name=VOICE),
             input_audio_format=InputAudioFormat.PCM16,
             output_audio_format=OutputAudioFormat.PCM16,
+            input_audio_transcription=AudioInputTranscriptionOptions(model="azure-speech", language="en-US"),
             turn_detection=ServerVad(threshold=0.5, prefix_padding_ms=300, silence_duration_ms=500),
             input_audio_echo_cancellation=AudioEchoCancellation(),
             input_audio_noise_reduction=AudioNoiseReduction(type="azure_deep_noise_suppression"),
@@ -145,10 +151,14 @@ class VoiceBridge:
             if msg is None:
                 return
             if isinstance(msg, bytes):
+                if self.mode != "voice":
+                    continue
                 await conn.input_audio_buffer.append(audio=base64.b64encode(msg).decode())
                 continue
             kind = msg.get("type")
             if kind == "text":
+                if self.mode != "text":
+                    continue
                 text = str(msg.get("text", "")).strip()
                 if not text:
                     continue
@@ -162,8 +172,6 @@ class VoiceBridge:
                 await self._json({"type": "user_text", "text": text})
                 await conn.conversation.item.create(item=UserMessageItem(content=[InputTextContentPart(text=text)]))
                 await conn.response.create()
-            elif kind == "audio_out":
-                self.audio_out = bool(msg.get("enabled"))
             elif kind == "cancel":
                 with contextlib.suppress(Exception):
                     await conn.response.cancel()
@@ -186,11 +194,11 @@ class VoiceBridge:
             session = event.get("session") or {}
             self.voice_session_id = session.get("id")
             await self.trace(
-                "voice", "session.created", session_id=self.voice_session_id,
+                "voice", "session.created", session_id=self.voice_session_id, mode=self.mode,
                 agent_session_id=agent_session_id(self.voice_session_id or ""), agent=self.agent_name,
             )
             await self._json(
-                {"type": "ready", "voice_session_id": self.voice_session_id, "agent": self.agent_name}
+                {"type": "ready", "voice_session_id": self.voice_session_id, "agent": self.agent_name, "mode": self.mode}
             )
             if self.voice_session_id:
                 tailer = LogTailer(

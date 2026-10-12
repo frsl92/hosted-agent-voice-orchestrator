@@ -13,6 +13,10 @@ param foundryResourceGroup string = 'rg-foundry'
 param foundryAccountName string = 'flopes-swc-foundry'
 param foundryProjectName string = 'swc-project'
 
+@description('Shared password that gates access to the web app.')
+@secure()
+param appPassword string = ''
+
 var suffix = uniqueString(resourceGroup().id)
 var acrName = take('${replace(namePrefix, '-', '')}${suffix}', 50)
 
@@ -90,6 +94,9 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = if (!empty(image)) {
       registries: [
         { server: acr.properties.loginServer, identity: identity.id }
       ]
+      secrets: [
+        { name: 'app-password', value: appPassword }
+      ]
     }
     template: {
       containers: [
@@ -99,6 +106,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = if (!empty(image)) {
           resources: { cpu: json('0.5'), memory: '1Gi' }
           env: [
             { name: 'AZURE_CLIENT_ID', value: identity.properties.clientId }
+            { name: 'APP_PASSWORD', secretRef: 'app-password' }
             { name: 'VOICELIVE_ENDPOINT', value: 'https://${foundryAccountName}.services.ai.azure.com' }
             { name: 'FOUNDRY_PROJECT_NAME', value: foundryProjectName }
             { name: 'FOUNDRY_PROJECT_ENDPOINT', value: 'https://${foundryAccountName}.services.ai.azure.com/api/projects/${foundryProjectName}' }
