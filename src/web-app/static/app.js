@@ -419,9 +419,11 @@ async function startCall() {
   try {
     await ensureAudio();
     const q = new URLSearchParams(location.search);
-    const flag = (k) => q.get(k) !== "0"; // ?ns=0&agc=0&aec=0 to A/B the browser's audio processing
+    // Browser noise suppression/AGC gated and clipped Bluetooth headset audio; Voice Live already applies
+    // Azure deep noise suppression and echo cancellation, so only AEC stays on. Override with ?ns=1&agc=1&aec=0.
+    const flag = (k, def) => (q.has(k) ? q.get(k) !== "0" : def);
     state.micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: flag("aec"), noiseSuppression: flag("ns"), autoGainControl: flag("agc") },
+      audio: { channelCount: 1, echoCancellation: flag("aec", true), noiseSuppression: flag("ns", false), autoGainControl: flag("agc", false) },
     });
     await ensureSession();
     if (gen !== state.gen) return;
