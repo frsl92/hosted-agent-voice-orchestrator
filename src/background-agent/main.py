@@ -71,11 +71,10 @@ class BackgroundCallCenterAgent:
         if not text:
             yield tr("empty_input", state["lang"])
             return
-        first = True
         async for chunk in self.foreground.handle(text, state, key):
-            # blank line = message boundary; the web app renders each as its own bubble
-            yield chunk if first else "\n\n" + chunk
-            first = False
+            # Blank line = message boundary (one bubble per answer). It is a suffix, not a prefix,
+            # so the TTS sees the sentence end immediately instead of holding the chunk until the next one.
+            yield chunk.rstrip() + "\n\n"
 
     def run(self, messages: Any = None, *, stream: bool = False, session: AgentSession | None = None, **kwargs: Any) -> Any:
         if stream:

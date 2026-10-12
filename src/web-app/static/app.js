@@ -357,7 +357,8 @@ function clearPending() {
 // A blank line in the agent stream marks a new message (one per sub-agent answer).
 function setAgentText(full) {
   state.agentRaw = full;
-  const parts = full.split(/\n\s*\n/).map((p) => p.trim()).filter((p, i, a) => p || i === a.length - 1);
+  let parts = full.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  if (!parts.length) parts = [""];
   const segs = state.agentSegs;
   if (!segs.length) segs.push(state.agentBubble);
   while (segs.length < parts.length) {
