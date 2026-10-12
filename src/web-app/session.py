@@ -32,7 +32,7 @@ from logtail import LogTailer, agent_session_id
 
 logger = logging.getLogger("session")
 
-VOICE = os.environ.get("VOICE_NAME", "pt-PT-RaquelNeural")
+VOICE = os.environ.get("VOICE_NAME", "pt-PT-Rui:MAI-Voice-2-Flash")
 # First language is the primary one; English stays recognised because callers may switch.
 STT_LANGUAGE = os.environ.get("STT_LANGUAGE", "pt-PT,en-US")
 # Silent first user turn that makes the agent greet the caller; the agents recognise it and never show it.
