@@ -30,6 +30,9 @@ VOICES: list[dict[str, Any]] = [
     _voice("pt-PT-DuarteNeural", "Duarte", "Male", "Neural", "GA"),
     _voice("pt-PT-FernandaNeural", "Fernanda", "Female", "Neural", "GA"),
     _voice("pt-PT-RaquelNeural", "Raquel", "Female", "Neural", "GA"),
+    # Multilingual voice designed for en-US; the session locale is still forced to pt-PT.
+    _voice("en-US-AvaMultilingualNeural", "Ava · Multilingual (en-US)", "Female", "Neural", "GA",
+           ["professional", "cheerful", "empathetic", "calm"]),
 ]
 
 DEFAULT_VOICE = VOICES[0]["id"]

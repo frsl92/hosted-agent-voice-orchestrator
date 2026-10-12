@@ -172,6 +172,8 @@ def test_voice_selection_is_validated_and_locale_forced():
     plain = bridge(voice="pt-PT-DuarteNeural", voice_style="happy")._session_config().voice
     assert plain.name == "pt-PT-DuarteNeural" and not plain.get("style") and plain.locale == "pt-PT"
     assert bridge(voice="nope").voice == voices.DEFAULT_VOICE
+    ava = bridge(voice="en-US-AvaMultilingualNeural", voice_style="calm")._session_config().voice
+    assert ava.name == "en-US-AvaMultilingualNeural" and ava.style == "calm" and ava.locale == "pt-PT"
 
 
 def test_config_exposes_voices(monkeypatch):
