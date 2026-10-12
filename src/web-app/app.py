@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 
 import auth
+import voices
 from samples import AGENTS, MODES, SAMPLES
 from session import VoiceBridge
 
@@ -120,7 +121,9 @@ async def config() -> dict:
         "agents": AGENTS,
         "modes": MODES,
         "samples": SAMPLES,
-        "project": PROJECT_NAME,
+        "voices": voices.VOICES,
+        "defaultVoice": voices.DEFAULT_VOICE,
+        "locale": voices.LOCALE,        "project": PROJECT_NAME,
         "maxSessionSeconds": MAX_SESSION_SECONDS,
     }
 
@@ -134,7 +137,7 @@ def origin_allowed(ws: WebSocket) -> bool:
 
 
 @app.websocket("/ws/session")
-async def session_ws(ws: WebSocket, agent: str, mode: str = "text") -> None:
+async def session_ws(ws: WebSocket, agent: str, mode: str = "text", voice: str = "", style: str = "") -> None:
     if not auth.token_valid(ws.cookies.get(auth.COOKIE), app_password()):
         await ws.close(code=4401, reason="authentication required")
         return
@@ -162,7 +165,7 @@ async def session_ws(ws: WebSocket, agent: str, mode: str = "text") -> None:
     bridge = VoiceBridge(
         WsSink(), state.credential, state.http,
         endpoint=VOICELIVE_ENDPOINT, project_name=PROJECT_NAME, project_endpoint=PROJECT_ENDPOINT,
-        agent_name=agent, mode=mode,
+        agent_name=agent, mode=mode, voice=voice, voice_style=style,
     )
 
     async def reader() -> None:

@@ -32,6 +32,8 @@ aside, #center { min-height: 0; border-right: 1px solid var(--line); }
 #right { display: flex; flex-direction: column; border-right: 0; background: var(--panel); min-width: 0; }
 
 button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; }
+select { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 13px; max-width: 220px; }
+select:disabled { opacity: .5; cursor: not-allowed; }
 button:hover:not(:disabled) { border-color: var(--accent); } button:disabled { opacity: .45; cursor: not-allowed; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 600; }
 button.ghost { background: transparent; border-color: transparent; color: var(--muted); } button.ghost:hover:not(:disabled) { color: var(--text); }

@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import sys
+import urllib.parse
 import urllib.request
 
 import websockets
@@ -16,6 +17,7 @@ import websockets
 ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
 AGENT = ARGS[0] if ARGS else "handoff-agent"
 PORT = ARGS[1] if len(ARGS) > 1 else "8000"
+OPTS = dict(a[2:].split("=", 1) for a in sys.argv[1:] if a.startswith("--") and "=" in a)  # --voice=... --style=...
 FRAME = 960  # 20 ms of 24 kHz PCM16
 
 
@@ -29,7 +31,8 @@ def login() -> str:
 
 
 async def main() -> None:
-    url = f"ws://localhost:{PORT}/ws/session?agent={AGENT}&mode=voice"
+    extra = "".join(f"&{k}={urllib.parse.quote(v)}" for k, v in OPTS.items())
+    url = f"ws://localhost:{PORT}/ws/session?agent={AGENT}&mode=voice{extra}"
     audio = bytearray()
     loop = asyncio.get_running_loop()
     async with websockets.connect(url, max_size=None, additional_headers={"Cookie": login()}) as ws:

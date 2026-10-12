@@ -7,7 +7,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY app.py auth.py logtail.py samples.py session.py selftest.py ./
+COPY app.py auth.py logtail.py samples.py session.py voices.py selftest.py ./
 COPY static ./static
 
 RUN useradd --create-home appuser

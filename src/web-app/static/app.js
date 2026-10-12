@@ -22,6 +22,7 @@ async function init() {
 
   renderSeg("agentSeg", state.config.agents, () => state.agent, (id) => { state.agent = id; changed(); });
   renderSeg("modeSeg", state.config.modes, () => state.mode, (id) => { state.mode = id; changed(); });
+  initVoicePicker();
   renderSamples();
 
   $("newBtn").onclick = () => newConversation();
@@ -65,6 +66,50 @@ function renderSeg(id, items, current, onPick) {
 }
 
 const agentCfg = () => state.config.agents.find((a) => a.id === state.agent);
+
+// Voice + style are only meaningful for the voice experience; the locale is forced to pt-PT server-side.
+const voiceCfg = () => state.config.voices.find((v) => v.id === state.voice);
+
+function initVoicePicker() {
+  const saved = JSON.parse(localStorage.getItem("voicePick") || "{}");
+  state.voice = state.config.voices.some((v) => v.id === saved.voice) ? saved.voice : state.config.defaultVoice;
+  state.style = saved.style || "";
+  $("voiceSel").innerHTML = "";
+  for (const v of state.config.voices) {
+    const o = document.createElement("option");
+    o.value = v.id;
+    o.textContent = `${v.name} (${v.gender}, ${v.tier}${v.status === "Preview" ? ", preview" : ""})`;
+    $("voiceSel").appendChild(o);
+  }
+  $("voiceSel").value = state.voice;
+  renderStyles();
+  $("voiceSel").onchange = () => { state.voice = $("voiceSel").value; state.style = ""; renderStyles(); voicePicked(); };
+  $("styleSel").onchange = () => { state.style = $("styleSel").value; voicePicked(); };
+}
+
+function renderStyles() {
+  const styles = voiceCfg().styles;
+  const sel = $("styleSel");
+  sel.innerHTML = "";
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = styles.length ? "Default" : "Not available";
+  sel.appendChild(none);
+  for (const s of styles) {
+    const o = document.createElement("option");
+    o.value = s;
+    o.textContent = s;
+    sel.appendChild(o);
+  }
+  if (!styles.includes(state.style)) state.style = "";
+  sel.value = state.style;
+  sel.disabled = !styles.length;
+}
+
+function voicePicked() {
+  localStorage.setItem("voicePick", JSON.stringify({ voice: state.voice, style: state.style }));
+  if (state.mode === "voice") newConversation();
+}
 
 function changed() {
   renderAgentInfo();
@@ -121,6 +166,7 @@ function newConversation() {
   const voice = state.mode === "voice";
   $("textView").hidden = voice;
   $("voiceView").hidden = !voice;
+  $("voicePicker").hidden = !voice;
   renderCallButtons();
   setOrb("idle", "Press <b>Start call</b> and speak");
   if (state.sample) renderScript();
@@ -146,7 +192,8 @@ function ensureSession() {
   if (state.session) return state.session;
   const gen = state.gen;
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  const url = `${proto}://${location.host}/ws/session?agent=${encodeURIComponent(state.agent)}&mode=${state.mode}`;
+  const voiceQ = state.mode === "voice" ? `&voice=${encodeURIComponent(state.voice)}&style=${encodeURIComponent(state.style)}` : "";
+  const url = `${proto}://${location.host}/ws/session?agent=${encodeURIComponent(state.agent)}&mode=${state.mode}${voiceQ}`;
   setStatus("Connecting…", "busy");
   state.session = new Promise((resolve, reject) => {
     const ws = new WebSocket(url);

@@ -28,11 +28,11 @@ from azure.ai.voicelive.models import (
 )
 from azure.core.credentials_async import AsyncTokenCredential
 
+import voices
 from logtail import LogTailer, agent_session_id
 
 logger = logging.getLogger("session")
 
-VOICE = os.environ.get("VOICE_NAME", "pt-PT-Rui:MAI-Voice-2-Flash")
 # First language is the primary one; English stays recognised because callers may switch.
 STT_LANGUAGE = os.environ.get("STT_LANGUAGE", "pt-PT,en-US")
 # Silent first user turn that makes the agent greet the caller; the agents recognise it and never show it.
@@ -77,6 +77,8 @@ class VoiceBridge:
         agent_name: str,
         mode: str = "text",
         audio_out: bool | None = None,
+        voice: str | None = None,
+        voice_style: str | None = None,
     ) -> None:
         self._sink = sink
         self._cred = credential
@@ -86,6 +88,7 @@ class VoiceBridge:
         self._project_endpoint = project_endpoint
         self.agent_name = agent_name
         self.mode = "voice" if mode == "voice" else "text"
+        self.voice, self.voice_style = voices.resolve(voice, voice_style)
         # Voice sessions always speak; text sessions never do.
         self.audio_out = (self.mode == "voice") if audio_out is None else audio_out
         self._conn: VoiceLiveConnection | None = None
@@ -118,6 +121,8 @@ class VoiceBridge:
         async with connect(endpoint=self._endpoint, credential=self._cred, agent_config=agent_config) as conn:
             self._conn = conn
             await conn.session.update(session=self._session_config())
+            if self.mode == "voice":
+                await self.trace("system", "voice.config", voice=self.voice, style=self.voice_style, locale=voices.LOCALE)
             events = asyncio.create_task(self._pump_events(conn))
             commands = asyncio.create_task(self._pump_commands(conn, incoming))
             try:
@@ -133,12 +138,18 @@ class VoiceBridge:
                         with contextlib.suppress(asyncio.CancelledError, Exception):
                             await task
 
+    def _voice_config(self) -> AzureStandardVoice:
+        kwargs: dict[str, Any] = {"name": self.voice, "locale": voices.LOCALE}
+        if self.voice_style:
+            kwargs["style"] = self.voice_style
+        return AzureStandardVoice(**kwargs)
+
     def _session_config(self) -> RequestSession:
         if self.mode == "text":
             return RequestSession(modalities=[Modality.TEXT])
         return RequestSession(
             modalities=[Modality.TEXT, Modality.AUDIO],
-            voice=AzureStandardVoice(name=VOICE),
+            voice=self._voice_config(),
             input_audio_format=InputAudioFormat.PCM16,
             output_audio_format=OutputAudioFormat.PCM16,
             input_audio_transcription=AudioInputTranscriptionOptions(model="azure-speech", language=STT_LANGUAGE),

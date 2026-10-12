@@ -9,6 +9,7 @@ from starlette.websockets import WebSocketDisconnect
 
 import app as webapp
 import auth
+import voices
 from logtail import agent_session_id, parse_record
 from samples import AGENTS, SAMPLES
 from session import CALL_START, VoiceBridge, response_text, usage_of
@@ -158,6 +159,28 @@ def test_bridge_modes():
     assert "audio" in cfg.modalities and cfg.input_audio_transcription.model == "azure-speech"
     assert cfg.input_audio_transcription.language.startswith("pt-PT") and "en-US" in cfg.input_audio_transcription.language
     assert cfg.voice.name.startswith("pt-PT")
+    assert cfg.voice.locale == "pt-PT" and not cfg.voice.get("style")
+
+
+def test_voice_selection_is_validated_and_locale_forced():
+    def bridge(**kw):
+        return VoiceBridge(None, None, None, endpoint="", project_name="", project_endpoint="", agent_name="a", mode="voice", **kw)
+
+    styled = bridge(voice="pt-PT-Rui:MAI-Voice-2.1", voice_style="happy")._session_config().voice
+    assert styled.name == "pt-PT-Rui:MAI-Voice-2.1" and styled.style == "happy" and styled.locale == "pt-PT"
+    # a style the voice does not offer is dropped; an unknown voice falls back to the default
+    plain = bridge(voice="pt-PT-DuarteNeural", voice_style="happy")._session_config().voice
+    assert plain.name == "pt-PT-DuarteNeural" and not plain.get("style") and plain.locale == "pt-PT"
+    assert bridge(voice="nope").voice == voices.DEFAULT_VOICE
+
+
+def test_config_exposes_voices(monkeypatch):
+    monkeypatch.setenv("APP_PASSWORD", "pw")
+    with TestClient(webapp.app) as client:
+        assert client.post("/login", json={"password": "pw"}).status_code == 200
+        data = client.get("/api/config").json()
+    assert data["locale"] == "pt-PT" and data["defaultVoice"] in {v["id"] for v in data["voices"]}
+    assert any(v["styles"] for v in data["voices"]) and any(not v["styles"] for v in data["voices"])
 
 
 def test_samples_are_portuguese():

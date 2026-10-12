@@ -17,6 +17,10 @@
     </div>
     <div class="picker"><span class="label">Agent</span><div class="seg" id="agentSeg"></div></div>
     <div class="picker"><span class="label">Experience</span><div class="seg" id="modeSeg"></div></div>
+    <div class="picker voice-only" id="voicePicker" hidden>
+      <span class="label">Voice</span><select id="voiceSel" title="Voice used by Voice Live (locale forced to pt-PT)"></select>
+      <span class="label">Style</span><select id="styleSel" title="Speaking style (only for voices that support it)"></select>
+    </div>
     <span class="spacer"></span>
     <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">No conversation yet</span></div>
     <button id="newBtn" class="primary" title="Close the current session and start a clean one">＋ New conversation</button>
