@@ -289,6 +289,7 @@ function onMessage(m) {
       break;
     case "user_text":
     case "user_transcript":
+      if (m.type === "user_transcript" && !m.text.trim()) break; // VAD blip that STT could not transcribe
       addBubble("user", "You", m.text);
       if (m.type === "user_transcript") {
         advanceScript();
@@ -417,14 +418,35 @@ async function startCall() {
   setOrb("idle", "Connecting…");
   try {
     await ensureAudio();
+    const q = new URLSearchParams(location.search);
+    const flag = (k) => q.get(k) !== "0"; // ?ns=0&agc=0&aec=0 to A/B the browser's audio processing
     state.micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      audio: { channelCount: 1, echoCancellation: flag("aec"), noiseSuppression: flag("ns"), autoGainControl: flag("agc") },
     });
     await ensureSession();
     if (gen !== state.gen) return;
+    const track = state.micStream.getAudioTracks()[0];
+    sendDiag({
+      event: "mic.start", label: track && track.label, ctxRate: state.ctx.sampleRate,
+      settings: track && track.getSettings ? track.getSettings() : null,
+    });
     const src = state.ctx.createMediaStreamSource(state.micStream);
     state.micNode = new AudioWorkletNode(state.ctx, "mic-processor");
+    let lastMsg = 0, maxGap = 0, frames = 0, quiet = 0;
     state.micNode.port.onmessage = (e) => {
+      if (!(e.data instanceof ArrayBuffer)) {
+        const s = e.data;
+        sendDiag({ event: "mic.stats", peak: +s.peak.toFixed(3), rms: +s.rms.toFixed(4), frames, maxGapMs: Math.round(maxGap),
+          buffered: state.ws ? state.ws.bufferedAmount : null, muted: state.muted });
+        frames = 0; maxGap = 0;
+        quiet = s.peak < 0.01 && !state.muted ? quiet + 1 : 0;
+        if (quiet === 4) note("The microphone seems silent — check the browser's selected input device and permissions.");
+        return;
+      }
+      const now = performance.now();
+      if (lastMsg) maxGap = Math.max(maxGap, now - lastMsg);
+      lastMsg = now;
+      frames++;
       if (state.ws && state.ws.readyState === WebSocket.OPEN && !state.muted) state.ws.send(e.data);
     };
     state.micAnalyser = state.ctx.createAnalyser();
@@ -443,6 +465,10 @@ async function startCall() {
     setOrb("idle", "Press <b>Start call</b> and speak");
     addBubble("err", "Microphone", `Could not start the call: ${err.message || err}`);
   }
+}
+
+function sendDiag(data) {
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify({ type: "diag", ...data }));
 }
 
 function endCall(silent) {

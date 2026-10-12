@@ -5,16 +5,28 @@ class MicProcessor extends AudioWorkletProcessor {
     this.ratio = sampleRate / 24000;
     this.pos = 0;
     this.out = [];
+    this.peak = 0;
+    this.sumSq = 0;
+    this.n = 0;
   }
   process(inputs) {
     const ch = inputs[0] && inputs[0][0];
     if (!ch) return true;
     for (let i = 0; i < ch.length; i++) {
+      const v = ch[i];
+      const a = v < 0 ? -v : v;
+      if (a > this.peak) this.peak = a;
+      this.sumSq += v * v;
+      this.n++;
       this.pos += 1;
       if (this.pos >= this.ratio) {
         this.pos -= this.ratio;
-        this.out.push(Math.max(-1, Math.min(1, ch[i])));
+        this.out.push(Math.max(-1, Math.min(1, v)));
       }
+    }
+    if (this.n >= sampleRate) {
+      this.port.postMessage({ peak: this.peak, rms: Math.sqrt(this.sumSq / this.n) });
+      this.peak = this.sumSq = this.n = 0;
     }
     while (this.out.length >= 480) {
       const frame = this.out.splice(0, 480);

@@ -178,6 +178,9 @@ class VoiceBridge:
                 await self._json({"type": "user_text", "text": text})
                 await conn.conversation.item.create(item=UserMessageItem(content=[InputTextContentPart(text=text)]))
                 await conn.response.create()
+            elif kind == "diag":
+                data = {k: v for k, v in msg.items() if k not in ("type", "event")}
+                await self.trace("mic", str(msg.get("event", "diag")), **data)
             elif kind == "cancel":
                 with contextlib.suppress(Exception):
                     await conn.response.cancel()
