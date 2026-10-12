@@ -57,7 +57,7 @@ def response_text(response: Any) -> str:
             text = content.get("transcript") or content.get("text")
             if text:
                 parts.append(text)
-    return " ".join(parts).strip()
+    return " ".join(parts).replace("meta_end", "").strip()
 
 
 def usage_of(response: Any) -> dict[str, Any]:
@@ -247,7 +247,9 @@ class VoiceBridge:
             if not self._first_token_sent and self._t_input:
                 self._first_token_sent = True
                 await self.trace("voice", "first.token", ms=now_ms() - self._t_input)
-            await self._json({"type": "agent_delta", "text": event.delta})
+            delta = event.delta.replace("meta_end", "")
+            if delta:
+                await self._json({"type": "agent_delta", "text": delta})
         elif t == ServerEventType.RESPONSE_AUDIO_DELTA:
             if not self._first_audio_sent and self._t_input:
                 self._first_audio_sent = True

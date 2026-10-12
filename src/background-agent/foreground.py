@@ -350,15 +350,21 @@ class Foreground:
                 yield chunk
 
     async def _deliver_ready(self, state: dict[str, Any], key: str) -> AsyncIterator[str]:
-        for task in self.store.collect_completed(key):
-            yield self._remember(state, "assistant", self._result_text(task, state["lang"]))
+        done = self.store.collect_completed(key)
+        remaining = len(list(self.store.active(key)))
+        for i, task in enumerate(done):
+            yield self._remember(
+                state, "assistant", self._result_text(task, state["lang"], i, len(done) + remaining)
+            )
 
     @staticmethod
-    def _result_text(task: Task, lang: str = EN) -> str:
+    def _result_text(task: Task, lang: str = EN, position: int = 0, total: int = 1) -> str:
+        """One spoken message per sub-agent result, introduced so topics don't blur together."""
         label = short_label(task.topic, task.params, lang)
         if task.status == TaskStatus.FAILED or not task.result:
             return tr("failed", lang, label=label)
-        return tr("update", lang, label=label, result=task.result)
+        key = "update_single" if total <= 1 else "update_first" if position == 0 else "update_next"
+        return tr(key, lang, label=label, result=task.result)
 
     async def _wait(self, state: dict[str, Any], key: str, closing_goodbye: bool = False) -> AsyncIterator[str]:
         """Stream progress and each result once; keep workers alive if we stop waiting."""
@@ -366,10 +372,15 @@ class Foreground:
         start = last = loop.time()
         progress = 0
         failed = False
+        delivered = 0
         while True:
-            for task in self.store.collect_completed(key):
-                failed = failed or task.status == TaskStatus.FAILED or not task.result
-                yield self._remember(state, "assistant", self._result_text(task, state["lang"]))
+            batch = self.store.collect_completed(key)
+            if batch:
+                total = delivered + len(batch) + len(list(self.store.active(key)))
+                for task in batch:
+                    failed = failed or task.status == TaskStatus.FAILED or not task.result
+                    yield self._remember(state, "assistant", self._result_text(task, state["lang"], delivered, total))
+                    delivered += 1
             if not self.store.active(key):
                 break
             now = loop.time()

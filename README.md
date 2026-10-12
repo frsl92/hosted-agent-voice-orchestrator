@@ -174,6 +174,9 @@ The browser needs HTTPS for the microphone (ACA provides it); the mic path was n
 - The web app keeps sessions in memory (max 10 concurrent per replica, 30 minutes each).
 - Background tasks and per-call state live in container memory (a restart drops them) — fine for a demo.
 - `background-agent` proposes a new lookup for a follow-up question instead of answering from earlier results.
+- Background-agent replies are paced: after the customer confirms it says "Dê-me um momento enquanto recolho a informação pedida", then
+  delivers **each sub-agent result as its own message** with a lead-in ("Já tenho uma primeira resposta. Sobre … / Agora, sobre …").
+  Messages are separated by a blank line in the stream; the web app renders each as its own bubble.
 - Cloud logs show harmless `No module named 'agents'` / "A365 OpenAI Agents instrumentation" telemetry lines.
 - Alternative wiring: let `azd` create a Voice Live wrapper agent (`conversationEngine.type: hosted_agent`) instead of
   connecting the client directly.

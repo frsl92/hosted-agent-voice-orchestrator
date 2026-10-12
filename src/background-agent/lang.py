@@ -46,7 +46,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         PT: "Desculpe, não percebi. Pode repetir, por favor?",
         EN: "Sorry, I didn't catch that. Could you say it again?",
     },
-    "ack": {PT: "Já vou verificar isso.", EN: "On it, checking that now."},
+    "ack": {
+        PT: "Dê-me um momento enquanto recolho a informação pedida.",
+        EN: "Give me a moment while I gather the information you asked for.",
+    },
     "closing": {PT: "Posso ajudar em mais alguma coisa?", EN: "Is there anything else I can help with?"},
     "goodbye": {PT: "Obrigado pela chamada. Tenha um ótimo dia!", EN: "Thanks for calling. Have a great day!"},
     "progress0": {PT: "Ainda estou a verificar, só um momento.", EN: "Still working on it, just a moment."},
@@ -79,7 +82,12 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     "ask_order": {PT: "Com certeza. Qual é o número da encomenda?", EN: "Sure. What's the order number?"},
     "confirm": {PT: "Então quer que eu {plan}. Está correto?", EN: "So you'd like me to {plan}. Is that right?"},
-    "update": {PT: "Aqui está a atualização sobre {label}. {result}", EN: "Here's the update on {label}. {result}"},
+    "update_single": {PT: "Já tenho a informação sobre {label}. {result}", EN: "I have the information on {label}. {result}"},
+    "update_first": {
+        PT: "Já tenho uma primeira resposta. Sobre {label}: {result}",
+        EN: "I already have a first answer. On {label}: {result}",
+    },
+    "update_next": {PT: "Agora, sobre {label}: {result}", EN: "Now, on {label}: {result}"},
     "failed": {
         PT: "Desculpe, não consegui verificar {label} neste momento. Quer que tente novamente?",
         EN: "Sorry, I couldn't finish checking {label} just now. Would you like me to try again?",

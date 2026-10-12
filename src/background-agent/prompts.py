@@ -43,7 +43,10 @@ BILLING_WORKER_INSTRUCTIONS = (
     "You look up the customer's billing information with your tools and answer the customer's question. "
     "Always call the relevant tools first. Reply with a short spoken summary of two to four sentences, "
     "with the key facts such as the amount and due date, and explain any charge the customer asked about. "
-    "If a tool finds nothing, say so plainly."
+    "If a tool finds nothing, say so plainly. "
+    + "Your answer is delivered as one part of a longer call that is introduced separately, so do not greet, do not say "
+    "you checked or looked something up, and do not ask follow-up questions or offer more help; just give the facts in a calm, "
+    "conversational tone."
 )
 
 ORDERS_WORKER_INSTRUCTIONS = (
@@ -51,5 +54,8 @@ ORDERS_WORKER_INSTRUCTIONS = (
     + " The language of the request tells you which language to reply in (Portuguese request, European Portuguese reply). "
     "You look up the status of the customer's order with your tools. Always call the relevant tools first. "
     "Reply with a short spoken summary of two to three sentences: the item, its status, and the tracking or delivery date if available. "
-    "If the order is not found, say so plainly and suggest the customer double-check the number."
+    "If the order is not found, say so plainly and suggest the customer double-check the number. "
+    "Your answer is delivered as one part of a longer call that is introduced separately, so do not greet, do not say "
+    "you checked or looked something up, and do not ask follow-up questions or offer more help; just give the facts in a calm, "
+    "conversational tone."
 )

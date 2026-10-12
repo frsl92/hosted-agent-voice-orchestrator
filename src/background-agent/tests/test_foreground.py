@@ -38,9 +38,11 @@ async def test_confirm_yes_launches_runs_delivers_once_and_closes(h: Harness):
     await propose_both(h)
     h.decision.confirmations.append("yes")
     out = await h.say("yes")
-    assert out[0].startswith("On it")
+    assert out[0].startswith("Give me a moment")
     joined = " ".join(out)
     assert joined.count("result-billing") == 1 and joined.count("result-order_status") == 1
+    results = [c for c in out if "result-" in c]
+    assert len(results) == 2 and "first answer" in results[0] and results[1].startswith("Now, on")
     assert out[-1] == CLOSING
     assert h.state["phase"] == IDLE
     assert sorted(t for t, _ in h.runner.started) == ["billing", "order_status"]

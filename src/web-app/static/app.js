@@ -6,7 +6,7 @@ const state = {
   ws: null, session: null, connected: false, responding: false, callActive: false, callEnded: false, muted: false,
   t0: null, traces: [], activeLabel: "–",
   ctx: null, micStream: null, micNode: null, micAnalyser: null, outAnalyser: null, playHead: 0, sources: new Set(),
-  agentBubble: null, pendingBubble: null, waiters: [], orb: "idle", orbTimer: null, turnToken: 0, gen: 0,
+  agentBubble: null, agentSegs: [], agentRaw: "", pendingBubble: null, waiters: [], orb: "idle", orbTimer: null, turnToken: 0, gen: 0,
 };
 
 // ------------------------------------------------------------------ setup
@@ -135,7 +135,7 @@ function newConversation() {
 function closeSession() {
   const ws = state.ws;
   state.ws = null; state.session = null; state.connected = false; state.responding = false;
-  state.agentBubble = state.pendingBubble = null;
+  state.agentBubble = state.pendingBubble = null; state.agentSegs = []; state.agentRaw = "";
   if (ws) { ws.onclose = ws.onerror = ws.onmessage = null; try { ws.close(); } catch (_) {} }
   stopMic();
   stopPlayback();
@@ -302,11 +302,12 @@ function onMessage(m) {
       clearPending();
       setStatus("Agent answering…", "busy");
       state.agentBubble = addBubble("agent partial", "Agent", "");
+      state.agentSegs = []; state.agentRaw = "";
       if (state.mode === "voice") setOrb("thinking", "Thinking…");
       break;
     case "agent_delta":
-      if (!state.agentBubble) { clearPending(); state.agentBubble = addBubble("agent partial", "Agent", ""); }
-      state.agentBubble.body.textContent += m.text;
+      if (!state.agentBubble) { clearPending(); state.agentBubble = addBubble("agent partial", "Agent", ""); state.agentSegs = []; state.agentRaw = ""; }
+      appendAgentText(m.text);
       scrollChat();
       break;
     case "agent_done":
@@ -315,10 +316,10 @@ function onMessage(m) {
       clearPending();
       setStatus(`Connected · ${agentCfg().name}`, "on");
       if (state.agentBubble) {
-        if (m.text) state.agentBubble.body.textContent = m.text;
-        if (!state.agentBubble.body.textContent) state.agentBubble.el.remove();
-        state.agentBubble.el.classList.remove("partial");
-        state.agentBubble = null;
+        if (m.text && !state.agentRaw.trim()) setAgentText(m.text);
+        if (!state.agentBubble.raw.trim()) state.agentBubble.el.remove();
+        else state.agentBubble.el.classList.remove("partial");
+        state.agentBubble = null; state.agentSegs = []; state.agentRaw = "";
       }
       if (state.mode === "voice") afterPlayback();
       state.waiters.splice(0).forEach((r) => r());
@@ -350,6 +351,24 @@ function advanceScript() {
 
 function clearPending() {
   if (state.pendingBubble) { state.pendingBubble.el.remove(); state.pendingBubble = null; }
+}
+
+// A blank line in the agent stream marks a new message (one per sub-agent answer).
+function setAgentText(full) {
+  state.agentRaw = full;
+  const parts = full.split(/\n\s*\n/).map((p) => p.trim()).filter((p, i, a) => p || i === a.length - 1);
+  const segs = state.agentSegs;
+  if (!segs.length) segs.push(state.agentBubble);
+  while (segs.length < parts.length) {
+    const b = segs.length === 0 ? state.agentBubble : addBubble("agent partial", "Agent", "");
+    if (segs.length) segs[segs.length - 1].el.classList.remove("partial");
+    segs.push(b);
+  }
+  parts.forEach((p, i) => { segs[i].body.textContent = p; segs[i].raw = p; });
+  state.agentBubble = segs[segs.length - 1];
+}
+function appendAgentText(text) {
+  setAgentText((state.agentRaw || "") + text);
 }
 
 // ------------------------------------------------------------------ chat

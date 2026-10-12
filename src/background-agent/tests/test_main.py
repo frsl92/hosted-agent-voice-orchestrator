@@ -24,7 +24,7 @@ async def test_wrapper_stream_and_nonstream_with_session_state():
     async for upd in agent.run([Message("user", ["yes"])], stream=True, session=session):
         texts.append(upd.text)
     assert any("result-billing" in t for t in texts)
-    assert texts[1].startswith(" ")
+    assert texts[1].startswith("\n\n")
     assert session.state["phase"] == "idle"
 
 

@@ -73,7 +73,8 @@ class BackgroundCallCenterAgent:
             return
         first = True
         async for chunk in self.foreground.handle(text, state, key):
-            yield chunk if first else " " + chunk
+            # blank line = message boundary; the web app renders each as its own bubble
+            yield chunk if first else "\n\n" + chunk
             first = False
 
     def run(self, messages: Any = None, *, stream: bool = False, session: AgentSession | None = None, **kwargs: Any) -> Any:
