@@ -7,6 +7,8 @@ from typing import Annotated
 
 from agent_framework import tool
 
+from calltrace import traced_tool
+
 _INVOICES = {
     "current": {"period": "September 2026", "total": 84.90, "due": "2026-10-15", "status": "unpaid"},
     "previous": {"period": "August 2026", "total": 62.40, "due": "2026-09-15", "status": "paid"},
@@ -19,6 +21,7 @@ _CHARGES = {
 
 
 @tool(approval_mode="never_require")
+@traced_tool
 async def get_account_balance() -> str:
     """Get the customer's current account balance and next due date."""
     await asyncio.sleep(0.2)
@@ -27,6 +30,7 @@ async def get_account_balance() -> str:
 
 
 @tool(approval_mode="never_require")
+@traced_tool
 async def get_latest_invoice(
     period: Annotated[str, "Which invoice: 'current' or 'previous'"] = "current",
 ) -> str:
@@ -37,6 +41,7 @@ async def get_latest_invoice(
 
 
 @tool(approval_mode="never_require")
+@traced_tool
 async def explain_charge(
     charge: Annotated[str, "Charge type to explain, e.g. 'roaming', 'device', 'overage'"],
 ) -> str:
@@ -47,6 +52,7 @@ async def explain_charge(
 
 
 @tool(approval_mode="never_require")
+@traced_tool
 async def get_payment_status() -> str:
     """Get the status of the customer's most recent payment."""
     await asyncio.sleep(0.2)

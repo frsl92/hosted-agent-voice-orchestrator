@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
+
+from calltrace import elapsed_ms, emit
 
 logger = logging.getLogger(__name__)
 
@@ -80,16 +83,21 @@ class TaskStore:
 
     async def _run(self, task: Task) -> None:
         task.status = TaskStatus.RUNNING
+        started = time.perf_counter()
+        emit("task.start", task_id=task.id, topic=task.topic, params=task.params)
         try:
             task.result = (await self._runner(task.topic, task.params)).strip()
             task.status = TaskStatus.COMPLETED
+            emit("task.done", task_id=task.id, topic=task.topic, result=task.result, ms=elapsed_ms(started))
         except asyncio.CancelledError:
             task.status = TaskStatus.CANCELLED
+            emit("task.cancelled", task_id=task.id, topic=task.topic, ms=elapsed_ms(started))
             raise
         except Exception as exc:  # worker failures must never crash the call
             logger.exception("worker %s failed", task.id)
             task.error = str(exc)
             task.status = TaskStatus.FAILED
+            emit("task.failed", task_id=task.id, topic=task.topic, error=task.error, ms=elapsed_ms(started))
 
     def get(self, task_id: str) -> Task | None:
         return self._tasks.get(task_id)

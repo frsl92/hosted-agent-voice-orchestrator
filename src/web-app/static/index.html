@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Call center agent tester</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="logo">☎</span>
+      <div>
+        <h1>Call center agent tester</h1>
+        <small id="project">Foundry hosted agents · Voice Live · Microsoft-Decision-1</small>
+      </div>
+    </div>
+    <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Not connected</span></div>
+  </header>
+
+  <main>
+    <aside id="left">
+      <section>
+        <h2>1 · Choose an agent</h2>
+        <div id="agents"></div>
+      </section>
+      <section>
+        <h2>2 · Sample conversations</h2>
+        <div id="samples"></div>
+      </section>
+    </aside>
+
+    <section id="center">
+      <div id="sessionBar">
+        <button id="startBtn" class="primary">Start session</button>
+        <button id="endBtn" disabled>End session</button>
+        <label class="inline"><input type="checkbox" id="speakToggle" /> Speak replies</label>
+        <span id="sessionInfo" class="muted"></span>
+      </div>
+
+      <div id="script" hidden>
+        <div class="script-head">
+          <strong id="scriptTitle"></strong>
+          <span class="spacer"></span>
+          <button id="scriptNext">Send next ▸</button>
+          <button id="scriptAll">Run all ▸▸</button>
+          <button id="scriptClose" title="Close script">✕</button>
+        </div>
+        <ol id="scriptTurns"></ol>
+      </div>
+
+      <div id="chat"><div class="empty">Pick an agent and press <b>Start session</b>. Type, click a sample line, or use the microphone.</div></div>
+
+      <form id="composer" autocomplete="off">
+        <button type="button" id="micBtn" title="Toggle microphone" disabled>🎤</button>
+        <input id="textInput" placeholder="Type a message…" disabled />
+        <button id="sendBtn" class="primary" disabled>Send</button>
+        <button type="button" id="cancelBtn" disabled title="Stop the agent's current answer">■</button>
+      </form>
+    </section>
+
+    <aside id="right">
+      <div class="trace-head">
+        <h2>Trace &amp; logs</h2>
+        <span class="spacer"></span>
+        <button id="traceClear">Clear</button>
+        <button id="traceDownload">Download</button>
+      </div>
+      <div id="metrics">
+        <div><small>Active</small><b id="mActive">–</b></div>
+        <div><small>First token</small><b id="mFirst">–</b></div>
+        <div><small>Last turn</small><b id="mTotal">–</b></div>
+        <div><small>Handoffs</small><b id="mHandoffs">0</b></div>
+      </div>
+      <div id="filters">
+        <label><input type="checkbox" data-src="voice" checked /> <span class="chip voice">voice</span></label>
+        <label><input type="checkbox" data-src="agent" checked /> <span class="chip agent">agent</span></label>
+        <label><input type="checkbox" data-src="log" /> <span class="chip log">raw logs</span></label>
+        <label><input type="checkbox" data-src="system" checked /> <span class="chip system">system</span></label>
+        <label class="inline"><input type="checkbox" id="autoscroll" checked /> follow</label>
+      </div>
+      <div id="trace"></div>
+    </aside>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

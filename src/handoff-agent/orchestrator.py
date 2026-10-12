@@ -8,11 +8,13 @@ globals), so it can be persisted by the host between ``/responses`` calls.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import prompts as P
+from calltrace import elapsed_ms, emit
 from decision import (
     CHOICE_CONFIDENCE_THRESHOLD,
     TOPIC_BILLING,
@@ -114,11 +116,14 @@ class Orchestrator:
             state["active_agent"] = ROUTER
         state["history"].append({"role": "user", "text": user_text})
         turn = _Turn(origin=state["active_agent"])
+        turn_started = time.perf_counter()
+        emit("turn.start", agent=state["active_agent"], user=user_text, queue=list(state["queue"]))
 
         try:
             plan: _Plan | None = await self._plan(state, turn)
-        except Exception:  # never crash the call because of routing
+        except Exception as exc:  # never crash the call because of routing
             logger.exception("Planning failed; staying with %s", state["active_agent"])
+            emit("plan.error", error=str(exc), agent=state["active_agent"])
             plan = _Plan(state["active_agent"])
 
         signals = TurnSignals()
@@ -137,6 +142,10 @@ class Orchestrator:
         if reply:
             state["history"].append({"role": "assistant", "text": reply})
         del state["history"][:-MAX_HISTORY]
+        emit(
+            "turn.end", agent=state["active_agent"], reply=reply, queue=list(state["queue"]),
+            ended=state["ended"], handoffs=turn.handoffs, ms=elapsed_ms(turn_started),
+        )
 
     # ------------------------------------------------------------------ planning
 
@@ -152,8 +161,10 @@ class Orchestrator:
             or state["handoff_count"] >= MAX_HANDOFFS_PER_CALL
         ):
             logger.info("Handoff to %s refused (active=%s)", target, state["active_agent"])
+            emit("handoff", source=state["active_agent"], target=target, refused=True)
             return False
         logger.info("Handoff %s -> %s", state["active_agent"], target)
+        emit("handoff", source=state["active_agent"], target=target, refused=False)
         state["active_agent"] = target
         state["handoff_count"] += 1
         turn.handoffs += 1
@@ -170,6 +181,11 @@ class Orchestrator:
         logger.info(
             "Analysis: billing=%.2f orders=%.2f primary=%s end=%.2f ok=%s",
             analysis.billing, analysis.order_status, analysis.primary_topic, analysis.wants_to_end, analysis.ok,
+        )
+        emit(
+            "decision.analyze", billing=analysis.billing, order_status=analysis.order_status,
+            primary_topic=analysis.primary_topic, primary_confidence=analysis.primary_confidence,
+            wants_to_end=analysis.wants_to_end, ok=analysis.ok, topics=topics,
         )
 
         if analysis.ok and analysis.confident_end:
@@ -202,6 +218,7 @@ class Orchestrator:
         topic = TOPIC_FOR_AGENT[active]
         other_p, resolved_p, ok = await self._decision.on_topic(self._transcript(state), topic)
         logger.info("Guard[%s]: other_topic=%.2f resolved=%.2f ok=%s", active, other_p, resolved_p, ok)
+        emit("decision.guard", agent=active, other_topic=other_p, resolved=resolved_p, ok=ok, queue=list(state["queue"]))
 
         resolved = bool(state["pending_return"])
         state["pending_return"] = False
@@ -271,6 +288,9 @@ class Orchestrator:
             history.append({"role": "assistant", "text": "".join(turn.parts).strip()})
         needs_separator = bool(turn.parts)
         produced = False
+        started = time.perf_counter()
+        first_token_ms: int | None = None
+        emit("agent.start", agent=plan.agent, directive=plan.directive, ends_call=plan.ends_call)
         try:
             async for chunk in self._runner.stream(plan.agent, history, plan.directive, signals):
                 if not chunk:
@@ -279,10 +299,14 @@ class Orchestrator:
                     chunk = " " + chunk
                 needs_separator = False
                 produced = True
+                if first_token_ms is None:
+                    first_token_ms = elapsed_ms(started)
                 turn.parts.append(chunk)
                 yield chunk
-        except Exception:
+            emit("agent.end", agent=plan.agent, first_token_ms=first_token_ms, ms=elapsed_ms(started))
+        except Exception as exc:
             logger.exception("Agent %s failed", plan.agent)
+            emit("agent.error", agent=plan.agent, error=str(exc), ms=elapsed_ms(started))
             if not produced:
                 turn.parts.append(FALLBACK_REPLY)
                 yield FALLBACK_REPLY

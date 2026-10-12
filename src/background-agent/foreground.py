@@ -11,9 +11,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
+from calltrace import elapsed_ms, emit
 from decision import TOPIC_BILLING, TOPIC_ORDERS, DecisionClient, TurnAnalysis, format_transcript
 from llm import Extraction, ForegroundLLM
 from task_store import Task, TaskStatus, TaskStore, signature
@@ -113,7 +115,18 @@ class Foreground:
         """Process one customer utterance, yielding speakable chunks as they become ready."""
         ensure_state(state)
         self._remember(state, "user", user_text)
+        started = time.perf_counter()
+        emit("turn.start", agent="foreground", phase=state["phase"], user=user_text, active_tasks=len(self.store.active(key)))
+        replies: list[str] = []
+        try:
+            async for chunk in self._handle(user_text, state, key):
+                replies.append(chunk)
+                yield chunk
+        finally:
+            emit("turn.end", agent="foreground", phase=state["phase"], reply=" ".join(replies),
+                 active_tasks=len(self.store.active(key)), ms=elapsed_ms(started))
 
+    async def _handle(self, user_text: str, state: dict[str, Any], key: str) -> AsyncIterator[str]:
         async for chunk in self._deliver_ready(state, key):
             yield chunk
         if state["phase"] == RUNNING and not self.store.active(key):
@@ -146,6 +159,7 @@ class Foreground:
             verdict == "yes" and analysis.ok and analysis.confident_end
         ):
             verdict = "no"
+        emit("decision.confirmation", verdict=verdict, wants_to_end=analysis.wants_to_end, proposed=state["proposed"])
         if verdict == "yes":
             async for chunk in self._launch_and_wait(state, key):
                 yield chunk
@@ -180,6 +194,11 @@ class Foreground:
         self, state: dict[str, Any], key: str, correction: bool = False, analysis: TurnAnalysis | None = None
     ) -> AsyncIterator[str]:
         analysis = analysis or await self.decision.analyze_turn(self._transcript(state))
+        emit(
+            "decision.analyze", billing=analysis.billing, order_status=analysis.order_status,
+            primary_topic=analysis.primary_topic, wants_to_end=analysis.wants_to_end, ok=analysis.ok,
+            topics=list(analysis.detected_topics),
+        )
         active = self.store.active(key)
 
         if not analysis.ok:
@@ -234,6 +253,8 @@ class Foreground:
 
     async def _propose(self, state: dict[str, Any], key: str, topics: list[str]) -> AsyncIterator[str]:
         ex = await self.llm.extract(state["history"])
+        emit("llm.extract", order_id=ex.order_id, invoice_period=ex.invoice_period,
+             billing_question=ex.billing_question, order_question=ex.order_question, topics=topics)
         if TOPIC_ORDERS in topics and not ex.order_id:
             state["pending_topics"] = topics
             yield await self._say(
@@ -256,6 +277,7 @@ class Foreground:
 
         state["proposed"] = proposed
         state["phase"] = PROPOSING
+        emit("phase", phase=PROPOSING, proposed=proposed)
         state["reasks"] = 0
         plan = " and ".join(describe(p["topic"], p["params"]) for p in proposed)
         yield await self._say(
@@ -275,6 +297,7 @@ class Foreground:
         state["proposed"] = []
         state["reasks"] = 0
         state["phase"] = RUNNING
+        emit("phase", phase=RUNNING, task_ids=list(state["task_ids"]))
         yield self._remember(state, "assistant", ACK)
         async for chunk in self._wait(state, key):
             yield chunk

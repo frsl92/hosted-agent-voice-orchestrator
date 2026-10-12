@@ -10,12 +10,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
 from azure.identity.aio import DefaultAzureCredential
+
+from calltrace import elapsed_ms, emit
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +106,7 @@ class DecisionClient:
         body = {"model": self._deployment, "state": state, "questions": questions}
         url = f"{self._endpoint}{DECISION_PATH}"
         last: Exception | None = None
+        started = time.perf_counter()
         for attempt in range(self._max_retries):
             try:
                 token = await self._credential.get_token(TOKEN_SCOPE)
@@ -113,10 +117,19 @@ class DecisionClient:
                     continue
                 if resp.status_code != 200:
                     raise DecisionError(f"Decision-1 returned {resp.status_code}: {resp.text[:200]}")
-                return resp.json()["answers"]
+                answers = resp.json()["answers"]
+                emit("decision.call", model=self._deployment, questions=list(questions), answers=answers,
+                     attempts=attempt + 1, ms=elapsed_ms(started))
+                return answers
+            except DecisionError as exc:
+                emit("decision.call", model=self._deployment, questions=list(questions), error=str(exc),
+                     ms=elapsed_ms(started))
+                raise
             except (httpx.HTTPError, KeyError, ValueError) as exc:
                 last = exc
                 await asyncio.sleep(min(2**attempt * 0.4, 3.0))
+        emit("decision.call", model=self._deployment, questions=list(questions), error=str(last),
+             ms=elapsed_ms(started))
         raise DecisionError(f"Decision-1 call failed: {last}")
 
     async def analyze_turn(self, transcript: str) -> TurnAnalysis:

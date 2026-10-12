@@ -7,6 +7,8 @@ from typing import Annotated
 
 from agent_framework import tool
 
+from calltrace import traced_tool
+
 _ORDERS = {
     "12345": {"item": "Fiber router", "status": "shipped", "carrier": "FastShip", "tracking": "FS123456789", "eta": "2026-10-14"},
     "67890": {"item": "5G smartphone", "status": "processing", "carrier": None, "tracking": None, "eta": "2026-10-20"},
@@ -20,6 +22,7 @@ def _find(order_id: str) -> dict | None:
 
 
 @tool(approval_mode="never_require")
+@traced_tool
 async def lookup_order(order_id: Annotated[str, "The order number, digits only"]) -> str:
     """Look up an order's item and current status."""
     await asyncio.sleep(0.3)
@@ -28,6 +31,7 @@ async def lookup_order(order_id: Annotated[str, "The order number, digits only"]
 
 
 @tool(approval_mode="never_require")
+@traced_tool
 async def get_tracking(order_id: Annotated[str, "The order number, digits only"]) -> str:
     """Get carrier and tracking details for a shipped order."""
     await asyncio.sleep(0.4)
@@ -40,6 +44,7 @@ async def get_tracking(order_id: Annotated[str, "The order number, digits only"]
 
 
 @tool(approval_mode="never_require")
+@traced_tool
 async def get_delivery_eta(order_id: Annotated[str, "The order number, digits only"]) -> str:
     """Get the estimated delivery date for an order."""
     await asyncio.sleep(0.3)

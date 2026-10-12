@@ -5,3 +5,4 @@ __pycache__/
 .azure/
 .pytest_cache/
 .agentignore.local
+src/web-app/requirements.txt

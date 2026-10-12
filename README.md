@@ -31,6 +31,7 @@ azure.yaml                 azd manifest (2 hosted agents)
 src/handoff-agent/         main.py, host_agent.py, orchestrator.py, sub_agents/, tools/, decision.py, tests/
 src/background-agent/      main.py, foreground.py, task_store.py, workers/, tools/, decision.py, tests/
 client/voicelive_client.py Voice Live console client (audio or --text)
+src/web-app/               Test/showcase web app for Azure Container Apps (FastAPI + static UI, infra/, deploy.ps1)
 ```
 
 Each agent folder is self-contained. `decision.py` and `voice_server.py` are intentionally duplicated.
@@ -96,8 +97,56 @@ uv run --extra audio python voicelive_client.py --agent-name background-agent
 Your identity needs the **Azure AI User** role on the project. Text mode was verified end to end against both deployed
 agents; the microphone path uses the same session and was not exercised in the build environment.
 
+## Web app: test and showcase the agents
+
+`src/web-app` is a debugging/showcase UI: pick an agent, pick a sample conversation (or type), chat by text or voice,
+and watch the trace for that session next to the conversation.
+
+```
+browser ──ws──▶ FastAPI (ACA, managed identity) ──Voice Live──▶ hosted agent (handoff-agent / background-agent)
+   ▲                  │
+   └── trace events ◀─┴── tails the agent's console log stream (TRACE {json} lines) for that session
+```
+
+- **Agents and samples:** 6 sample conversations per agent (multi-topic, topic switch, out-of-scope, order not shipped,
+  ...). Click a sample, then **Send next**, **Run all**, or click any line to send it.
+- **Text or voice:** the session always uses Voice Live with server VAD, echo cancellation and noise reduction. The mic
+  button streams audio; "Speak replies" plays the agent's voice. Both can be mixed in one session.
+- **Trace panel** (filterable, expandable rows, JSON download): `voice` (first token / first audio / response.done
+  latency and tokens), `agent` (turn start/end, Decision-1 calls and probabilities, handoffs, tool calls with
+  args/results, background `phase` and `task.*`), `system` (container state) and raw container `log` lines (off by default).
+  Agents emit these as `TRACE {json}` log lines via `calltrace.py`; the web app parses them from
+  `GET {project}/agents/{agent}/sessions/vl_{voiceSessionId}:logstream`.
+- Timestamps come from two machines, so ordering between `voice` and `agent` events can differ by a little clock skew.
+  The first turn of a session includes the agent container cold start (about 10 s).
+
+Run locally (uses your `az login`; needs **Azure AI User** + **Cognitive Services User** on the account):
+
+```powershell
+cd src\web-app
+uv sync
+uv run uvicorn app:app --port 8080     # http://localhost:8080
+uv run pytest
+```
+
+Deploy to Azure Container Apps (creates `rg-voice-tester`: ACR, Log Analytics, ACA environment, user-assigned identity
+with `AcrPull` and the two Foundry roles; builds the image in ACR; enables Entra sign-in for the current tenant):
+
+```powershell
+cd src\web-app
+.\deploy.ps1                 # -SkipAuth only for a private throw-away test
+```
+
+Sharing the URL: sign-in is required (single-tenant Entra app registration `voicetester-web`), so anyone in the tenant can
+open it. Everyone who uses it drives your agents with the app's identity, so treat access as access to the project.
+Secrets: the app registration's client secret is stored as a Container App secret and rotates each time `deploy.ps1` runs.
+Smoke test the deployment without going through sign-in:
+`az containerapp exec -g rg-voice-tester -n voicetester-app --command "python selftest.py handoff-agent"`.
+The browser needs HTTPS for the microphone (ACA provides it); the mic path was not exercised in the build environment.
+
 ## Known limitations
 
+- The web app keeps sessions in memory (max 10 concurrent per replica, 30 minutes each).
 - Background tasks and per-call state live in container memory (a restart drops them) — fine for a demo.
 - `background-agent` proposes a new lookup for a follow-up question instead of answering from earlier results.
 - Cloud logs show harmless `No module named 'agents'` / "A365 OpenAI Agents instrumentation" telemetry lines.
