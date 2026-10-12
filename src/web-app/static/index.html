@@ -76,6 +76,7 @@
       <div class="tabs">
         <button class="tab active" data-tab="flow">Flow</button>
         <button class="tab" data-tab="decisions">Decision-1 <span id="decCount" class="badge">0</span></button>
+        <button class="tab" data-tab="usage">Usage <span id="usageBadge" class="badge">$0.00</span></button>
         <button class="tab" data-tab="trace">Trace</button>
         <span class="spacer"></span>
         <button id="traceDownload" class="ghost" title="Download the full trace as JSON">⬇ Export</button>
@@ -93,6 +94,10 @@
         <div id="timeline"></div>
       </div>
       <div id="paneDecisions" class="pane"><div id="decisions"></div></div>
+      <div id="paneUsage" class="pane">
+        <div class="usage-head"><h3>Tokens &amp; cost · this conversation</h3><button id="usageConfig" class="ghost" title="Set the price per model">⚙ Pricing</button></div>
+        <div id="usageBody"></div>
+      </div>
       <div id="paneTrace" class="pane">
         <div id="filters">
           <label><input type="checkbox" data-src="voice" checked /> <span class="chip voice">voice</span></label>
@@ -106,7 +111,18 @@
     </aside>
   </main>
 
+  <div id="pricingModal" class="modal" hidden>
+    <div class="modal-box">
+      <h3>Model pricing</h3>
+      <p class="muted">USD per 1 million tokens. Saved in this browser.</p>
+      <div id="cfgRows"></div>
+      <p class="uwarn">⚠ Assumes input cache tokens are 0, so values are not 100% accurate.</p>
+      <div class="modal-actions"><button id="cfgReset" class="ghost">Reset to defaults</button><span class="spacer"></span><button id="cfgCancel">Cancel</button><button id="cfgSave" class="primary">Save</button></div>
+    </div>
+  </div>
+
   <script src="/static/viz.js"></script>
+  <script src="/static/usage.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

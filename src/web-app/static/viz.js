@@ -210,7 +210,7 @@ const Viz = (() => {
       if (!turns) el.timeline.innerHTML = "";
       turns++;
       turnEl = document.createElement("div"); turnEl.className = "turn";
-      turnEl.innerHTML = `<div class="turn-head"><div class="tn">Turn ${turns} · ${esc(d.agent)}${d.phase ? " · phase " + esc(d.phase) : ""}</div><div class="tu">“${esc(d.user)}”</div></div><div class="steps"></div>`;
+      turnEl.innerHTML = `<div class="turn-head"><div class="tn">Turn ${turns} · ${esc(d.agent)}${d.phase ? " · phase " + esc(d.phase) : ""}</div><div class="tu">${d.user === "(call connected)" ? "<i>Call connected — greeting</i>" : "“" + esc(d.user) + "”"}</div></div><div class="steps"></div>`;
       el.timeline.prepend(turnEl); return;
     }
     if (k === "decision.call") return;

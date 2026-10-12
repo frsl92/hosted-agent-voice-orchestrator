@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+import lang
 import prompts as P
 from calltrace import elapsed_ms, emit
 from decision import (
@@ -39,8 +40,9 @@ MAX_HISTORY = 30
 MAX_HANDOFFS_PER_CALL = 30
 MAX_HANDOFFS_PER_TURN = 1
 
-FALLBACK_REPLY = "Sorry, I had a problem on my side. Could you please say that again?"
-EMPTY_INPUT_REPLY = "Sorry, I didn't catch that. Could you say it again?"
+FALLBACK_REPLY = "fallback"
+EMPTY_INPUT_REPLY = "empty_input"
+GREETING_CUE = "(The customer has just connected to the call.)"
 
 
 @dataclass
@@ -67,6 +69,7 @@ def new_state() -> dict[str, Any]:
         "ended": False,
         "pending_return": False,
         "handoff_count": 0,
+        "lang": lang.DEFAULT,
     }
 
 
@@ -107,10 +110,14 @@ class Orchestrator:
         """Process one customer utterance, yielding the reply text as it is produced."""
         ensure_state(state)
         user_text = (user_text or "").strip()
-        if not user_text:
-            yield EMPTY_INPUT_REPLY
+        if user_text == lang.CALL_START:
+            async for chunk in self._greet(state):
+                yield chunk
             return
-
+        if not user_text:
+            yield lang.t(EMPTY_INPUT_REPLY, state["lang"])
+            return
+        state["lang"] = lang.detect(user_text, state["lang"])
         if state["ended"]:
             state["ended"] = False
             state["active_agent"] = ROUTER
@@ -146,6 +153,26 @@ class Orchestrator:
             "turn.end", agent=state["active_agent"], reply=reply, queue=list(state["queue"]),
             ended=state["ended"], handoffs=turn.handoffs, ms=elapsed_ms(turn_started),
         )
+
+    async def _greet(self, state: dict[str, Any]) -> AsyncIterator[str]:
+        """Opening line of the call: the router greets before the customer says anything."""
+        if state["greeted"] or state["history"]:
+            return
+        turn = _Turn(origin=ROUTER)
+        started = time.perf_counter()
+        emit("turn.start", agent=ROUTER, user="(call connected)", queue=[])
+        # The LLM needs a user message to answer; it is removed again once the greeting is spoken.
+        state["history"].append({"role": "user", "text": GREETING_CUE})
+        try:
+            async for chunk in self._speak(state, turn, _Plan(ROUTER, P.DIRECTIVE_GREET), TurnSignals()):
+                yield chunk
+        finally:
+            state["history"].clear()
+        state["greeted"] = True
+        reply = "".join(turn.parts).strip()
+        if reply:
+            state["history"].append({"role": "assistant", "text": reply})
+        emit("turn.end", agent=ROUTER, reply=reply, queue=[], ended=False, handoffs=0, ms=elapsed_ms(started))
 
     # ------------------------------------------------------------------ planning
 
@@ -210,7 +237,7 @@ class Orchestrator:
         ):
             return _Plan(ROUTER, P.DIRECTIVE_OUT_OF_SCOPE)
         if not state["greeted"]:
-            return _Plan(ROUTER, P.DIRECTIVE_GREET)
+            return _Plan(ROUTER, P.DIRECTIVE_GREET_REPLY)
         return _Plan(ROUTER, P.DIRECTIVE_CLARIFY)
 
     async def _plan_sub(self, state: dict[str, Any], turn: _Turn) -> _Plan:
@@ -316,5 +343,6 @@ class Orchestrator:
             logger.exception("Agent %s failed", plan.agent)
             emit("agent.error", agent=plan.agent, error=str(exc), ms=elapsed_ms(started))
             if not produced:
-                turn.parts.append(FALLBACK_REPLY)
-                yield FALLBACK_REPLY
+                fallback = lang.t(FALLBACK_REPLY, state["lang"])
+                turn.parts.append(fallback)
+                yield fallback

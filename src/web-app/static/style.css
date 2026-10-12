@@ -38,7 +38,7 @@ button.ghost { background: transparent; border-color: transparent; color: var(--
 button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 button.big { padding: 10px 20px; border-radius: 24px; font-size: 15px; }
 button.on { background: var(--warn); border-color: var(--warn); color: #1a1200; }
-input[type=text], #textInput { flex: 1; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }
+input[type=text], input[type=number], #textInput { flex: 1; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }
 label.inline { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 
 .info { font-size: 13px; color: #c5d0dc; } .info b { display: block; font-size: 15px; color: var(--text); } .info .tag { color: var(--muted); display: block; margin-bottom: 6px; }
@@ -81,7 +81,7 @@ label.inline { display: inline-flex; align-items: center; gap: 6px; color: var(-
 .captions { border-top: 1px solid var(--line); margin-top: 6px; }
 
 .tabs { display: flex; align-items: center; gap: 2px; padding: 8px 10px 0; border-bottom: 1px solid var(--line); }
-.tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); padding: 8px 14px; }
+.tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); padding: 8px 11px; }
 .tab.active { color: var(--text); border-bottom-color: var(--accent); }
 .badge { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 0 7px; font-size: 11px; margin-left: 4px; }
 #metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 10px 14px; }
@@ -186,3 +186,19 @@ details.raw pre { margin: 6px 0 0; padding: 8px; background: #0b0f14; border-rad
 .row pre { margin: 6px 0 2px 64px; padding: 8px; background: #0b0f14; border-radius: 6px; white-space: pre-wrap; word-break: break-word; display: none; }
 .row.open pre { display: block; }
 @media (max-width: 1100px) { main { grid-template-columns: 1fr; overflow-y: auto; } #right { min-height: 560px; } }
+
+/* usage / cost */
+.usage-head { display: flex; align-items: center; justify-content: space-between; } .usage-head h3 { margin: 14px 0 8px; }
+.usum { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; } .usum div { background: var(--panel2); border-radius: 6px; padding: 8px 10px; }
+.usum small { display: block; font-size: 11px; color: var(--muted); } .usum b { font-size: 16px; } .usum div:first-child b { color: var(--good); }
+.uwarn { margin: 8px 0 12px; padding: 5px 9px; font-size: 11.5px; color: var(--warn); background: rgba(210, 153, 34, .1); border: 1px solid rgba(210, 153, 34, .35); border-radius: 6px; }
+.utable { width: 100%; border-collapse: collapse; font-size: 12.5px; } .utable th { text-align: right; font-weight: 600; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.utable td { text-align: right; padding: 7px 6px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; } .utable th:first-child, .utable td.um { text-align: left; }
+.um small { display: block; color: var(--muted); font-size: 11px; } .uc b { color: var(--good); }
+.ucalls { display: flex; flex-direction: column; gap: 4px; } .ucall { display: flex; align-items: center; gap: 8px; font-size: 12px; background: var(--panel2); border-radius: 6px; padding: 5px 8px; }
+.ucall .up { flex: 1; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ucall .ut { font-variant-numeric: tabular-nums; }
+.modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: flex; align-items: center; justify-content: center; z-index: 50; } .modal[hidden] { display: none; }
+.modal-box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; width: min(520px, 92vw); } .modal-box h3 { margin: 0 0 4px; }
+.cfg-row { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.cfg-row label { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); } .cfg-row input { width: 80px; } .cfg-row .cur { color: var(--text); }
+.modal-actions { display: flex; gap: 8px; align-items: center; } .modal-actions .spacer { flex: 1; }

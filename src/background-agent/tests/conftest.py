@@ -72,13 +72,14 @@ class Runner:
 
 
 class Harness:
-    def __init__(self, runner: Runner | None = None, **kw: Any) -> None:
+    def __init__(self, runner: Runner | None = None, lang: str = "en", **kw: Any) -> None:
         self.decision = FakeDecision()
         self.llm = FakeLLM()
         self.runner = runner or Runner()
         self.store = TaskStore(self.runner)
         self.fg = Foreground(self.decision, self.llm, self.store, poll_interval=0.01, **kw)
         self.state = new_state()
+        self.state["lang"] = lang
         self.key = "s1"
 
     async def say(self, text: str) -> list[str]:

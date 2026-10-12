@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from agent_framework import Agent
 
+from calltrace import emit_usage
 from decision import TOPIC_BILLING, TOPIC_ORDERS
 from task_store import WorkerRunner
 from workers.billing import build_billing_worker, billing_prompt
@@ -28,6 +30,7 @@ def build_worker_runner(client: Any) -> WorkerRunner:
         else:
             raise ValueError(f"unknown topic {topic!r}")
         response = await agent.run(prompt)
+        emit_usage(os.environ.get("AZURE_AI_MODEL_DEPLOYMENT_NAME", "gpt-5.6-luna"), response.usage_details, f"worker:{topic}")
         return response.text
 
     return run

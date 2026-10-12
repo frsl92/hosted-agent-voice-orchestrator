@@ -60,6 +60,9 @@ async def run(sample, cookie):
     async with websockets.connect(url, max_size=None, additional_headers={"Cookie": cookie}) as ws:
         while json.loads(await asyncio.wait_for(ws.recv(), 30))["type"] != "ready":
             pass
+        print("  (call connected, waiting for the greeting)")
+        await until_done(ws, seen)
+        await asyncio.sleep(2)
         for turn in sample["turns"]:
             print("  user:", turn)
             await ws.send(json.dumps({"type": "text", "text": turn}))

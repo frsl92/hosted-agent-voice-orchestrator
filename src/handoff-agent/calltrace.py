@@ -32,6 +32,27 @@ def emit(kind: str, **data: Any) -> None:
         pass
 
 
+def _count(usage: Any, *names: str) -> int:
+    for name in names:
+        value = usage.get(name) if isinstance(usage, dict) else getattr(usage, name, None)
+        if isinstance(value, int):
+            return value
+    return 0
+
+
+def emit_usage(model: str, usage: Any, purpose: str = "") -> None:
+    """Trace the token usage of one model call (MAF ``UsageDetails`` or a Decision-1 ``usage`` object)."""
+    if not usage:
+        return
+    emit(
+        "usage",
+        model=model,
+        purpose=purpose,
+        input_tokens=_count(usage, "input_token_count", "input_tokens", "prompt_tokens"),
+        output_tokens=_count(usage, "output_token_count", "output_tokens", "completion_tokens"),
+    )
+
+
 def elapsed_ms(start: float) -> int:
     return round((time.perf_counter() - start) * 1000)
 

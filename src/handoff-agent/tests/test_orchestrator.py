@@ -3,6 +3,7 @@ import json
 import pytest
 
 from decision import TurnAnalysis
+from lang import CALL_START
 from orchestrator import BILLING, ORDERS, ROUTER, Orchestrator, new_state
 
 
@@ -52,7 +53,9 @@ async def say(orch, state, text):
 
 @pytest.fixture
 def state():
-    return new_state()
+    s = new_state()
+    s["lang"] = "en"
+    return s
 
 
 def make(analyses=None, guards=None, returns=()):
@@ -232,6 +235,42 @@ async def test_empty_input(state):
     out = await say(orch, state, "   ")
     assert "didn't catch" in out
     assert runner.calls == []
+
+
+async def test_empty_input_in_portuguese():
+    orch, _, _ = make()
+    out = await say(orch, new_state(), "   ")
+    assert "não percebi" in out
+
+
+async def test_call_start_greets_from_router_without_decision(state):
+    orch, decision, runner = make()
+    out = await say(orch, state, CALL_START)
+    assert out == "[router] ok."
+    assert decision.analyze_calls == 0
+    assert "call-center operator" in runner.calls[0]["directive"]
+    assert runner.calls[0]["history"][-1]["role"] == "user"  # synthetic cue, hidden afterwards
+    assert [m["role"] for m in state["history"]] == ["assistant"]
+    assert state["greeted"] is True and state["active_agent"] == ROUTER
+    assert await say(orch, state, CALL_START) == ""  # never greets twice
+    assert len(runner.calls) == 1
+
+
+async def test_first_customer_turn_after_greeting_is_routed_normally(state):
+    orch, _, runner = make([analysis(billing=0.95, primary="billing")])
+    await say(orch, state, CALL_START)
+    await say(orch, state, "Why is my bill so high?")
+    assert [c["agent"] for c in runner.calls] == [ROUTER, BILLING]
+    assert [m["role"] for m in state["history"]] == ["assistant", "user", "assistant"]
+
+
+async def test_language_follows_the_customer():
+    orch, _, _ = make([analysis(), analysis()])
+    state = new_state()
+    await say(orch, state, "Olá, queria saber da minha fatura")
+    assert state["lang"] == "pt"
+    await say(orch, state, "Hello, what is my bill please")
+    assert state["lang"] == "en"
 
 
 async def test_state_json_serializable_and_history_trimmed(state):

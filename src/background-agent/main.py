@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 
 from decision import DecisionClient
 from foreground import Foreground, ensure_state
+from lang import t as tr
 from task_store import TaskStore
 
 load_dotenv()
@@ -68,7 +69,7 @@ class BackgroundCallCenterAgent:
         state = ensure_state(session.state)
         key = state.setdefault("session_key", self._key(session))
         if not text:
-            yield "Sorry, I didn't catch that. Could you say it again?"
+            yield tr("empty_input", state["lang"])
             return
         first = True
         async for chunk in self.foreground.handle(text, state, key):

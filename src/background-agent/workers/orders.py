@@ -19,5 +19,5 @@ def build_orders_worker(client: Any) -> Agent:
 
 
 def orders_prompt(params: dict[str, Any]) -> str:
-    question = params.get("question") or "where is the order and when will it arrive"
+    question = params.get("question") or "onde está a encomenda e quando vai chegar"
     return f"Order number: {params.get('order_id', '')}. Customer wants to know: {question}."

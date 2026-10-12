@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 import httpx
 from azure.identity.aio import DefaultAzureCredential
 
-from calltrace import elapsed_ms, emit
+from calltrace import elapsed_ms, emit, emit_usage
 
 logger = logging.getLogger(__name__)
 
@@ -118,9 +118,12 @@ class DecisionClient:
                     continue
                 if resp.status_code != 200:
                     raise DecisionError(f"Decision-1 returned {resp.status_code}: {resp.text[:200]}")
-                answers = resp.json()["answers"]
+                payload = resp.json()
+                answers = payload["answers"]
+                usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else None
                 emit("decision.call", purpose=purpose, model=self._deployment, questions=names, request=body,
-                     answers=answers, attempts=attempt + 1, ms=elapsed_ms(started))
+                     answers=answers, usage=usage, attempts=attempt + 1, ms=elapsed_ms(started))
+                emit_usage(self._deployment, usage, purpose)
                 return answers
             except DecisionError as exc:
                 emit("decision.call", purpose=purpose, model=self._deployment, questions=names, request=body,

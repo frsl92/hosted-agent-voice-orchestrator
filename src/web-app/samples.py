@@ -1,7 +1,8 @@
 """Agents, interaction modes and sample conversations offered by the test app.
 
 The sample conversations are shared by every agent: each line is something a customer would naturally say
-to either design, so the same script can be used to compare them side by side.
+to either design, so the same script can be used to compare them side by side. The lines are written in
+European Portuguese, the main language of the callers; the agents also follow the caller into English.
 """
 
 from __future__ import annotations
@@ -44,9 +45,9 @@ SAMPLES: list[dict[str, Any]] = [
         "title": "Bill and order in one go",
         "description": "Two topics in one sentence: shows multi-topic detection, queueing and the hand-over between them.",
         "turns": [
-            "Hi, I'd like to know about my latest bill and also check the status of order 12345.",
-            "Yes, that's right, go ahead.",
-            "Thanks, that's all I needed. Goodbye!",
+            "Olá, queria saber o valor da minha última fatura e também ver o estado da encomenda 12345.",
+            "Sim, está correto, pode avançar.",
+            "Obrigado, era só isso que precisava. Até logo!",
         ],
     },
     {
@@ -54,9 +55,9 @@ SAMPLES: list[dict[str, Any]] = [
         "title": "Billing question",
         "description": "Balance and due date, then a clean end of call.",
         "turns": [
-            "Hello, can you tell me how much I owe this month?",
-            "Yes, that's right. And when is it due?",
-            "That's all, thank you. Goodbye!",
+            "Bom dia, pode dizer-me quanto tenho para pagar este mês?",
+            "Sim, é isso mesmo. E até quando tenho de pagar?",
+            "Era só isso, obrigado. Até logo!",
         ],
     },
     {
@@ -64,43 +65,43 @@ SAMPLES: list[dict[str, Any]] = [
         "title": "Order tracking",
         "description": "A shipped order with tracking details.",
         "turns": [
-            "Hi, I'd like to check on my order 12345.",
-            "Yes, that's right. What's the tracking number?",
-            "Great, thanks. Bye!",
+            "Olá, queria saber da minha encomenda 12345.",
+            "Sim, é essa. Qual é o número de seguimento?",
+            "Ótimo, obrigado. Até logo!",
         ],
     },
     {
         "id": "order-processing",
         "title": "Order not shipped yet",
         "description": "The order is still processing: there is no tracking number yet, only an estimate.",
-        "turns": ["Where is my order 67890?", "Yes, that's the one. When will it arrive?"],
+        "turns": ["Onde está a minha encomenda 67890?", "Sim, é essa. Quando é que vai chegar?"],
     },
     {
         "id": "topic-switch",
         "title": "Change of topic",
         "description": "Starts with billing, then the customer switches to an order mid-conversation.",
         "turns": [
-            "I'd like to know my current balance.",
-            "Actually, forget that. What's going on with order 55555?",
-            "Thanks, goodbye.",
+            "Gostava de saber o meu saldo atual.",
+            "Na verdade, esqueça isso. O que se passa com a encomenda 55555?",
+            "Obrigado, até logo.",
         ],
     },
     {
         "id": "correction",
         "title": "Customer corrects themselves",
         "description": "The customer gives one order number and then corrects it.",
-        "turns": ["Please check on order 12345.", "No, I meant order 67890.", "Yes, that's right. Thanks!"],
+        "turns": ["Por favor, veja-me a encomenda 12345.", "Não, eu queria dizer a encomenda 67890.", "Sim, está certo. Obrigado!"],
     },
     {
         "id": "missing-order",
         "title": "Missing order number",
         "description": "The agent has to ask for the order number before it can look anything up.",
-        "turns": ["I want to know where my order is.", "It's 55555.", "Yes, that's right. Thank you!"],
+        "turns": ["Quero saber onde está a minha encomenda.", "É a 55555.", "Sim, está certo. Muito obrigado!"],
     },
     {
         "id": "out-of-scope",
         "title": "Out-of-scope request",
         "description": "Something the agents cannot do, followed by an in-scope question.",
-        "turns": ["Can you help me change my mobile plan?", "Okay, then can you check my previous bill?", "Yes, please."],
+        "turns": ["Pode ajudar-me a mudar de tarifário móvel?", "Está bem, então pode ver-me a fatura anterior?", "Sim, por favor."],
     },
 ]

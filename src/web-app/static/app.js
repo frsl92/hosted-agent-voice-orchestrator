@@ -18,6 +18,7 @@ async function init() {
   $("project").textContent = `Project ${state.config.project} · Foundry hosted agents · Voice Live · Microsoft-Decision-1`;
   state.agent = state.config.agents[0].id;
   Viz.init({ flow: $("flowVisual"), timeline: $("timeline"), decisions: $("decisions"), onCounts: onCounts });
+  Usage.init({ body: $("usageBody"), badge: $("usageBadge"), configBtn: $("usageConfig"), modal: $("pricingModal"), cfgRows: $("cfgRows"), cfgSave: $("cfgSave"), cfgCancel: $("cfgCancel"), cfgReset: $("cfgReset") });
 
   renderSeg("agentSeg", state.config.agents, () => state.agent, (id) => { state.agent = id; changed(); });
   renderSeg("modeSeg", state.config.modes, () => state.mode, (id) => { state.mode = id; changed(); });
@@ -113,6 +114,7 @@ function newConversation() {
   $("decCount").textContent = "0";
   $("mCount").textContent = "0";
   Viz.reset(agentCfg().kind);
+  Usage.reset();
   $("mCountLabel").textContent = agentCfg().kind === "handoff" ? "Handoffs" : "Tasks";
   renderAgentInfo();
 
@@ -273,6 +275,18 @@ function onMessage(m) {
   switch (m.type) {
     case "ready":
       break;
+    case "greeting":
+      // The agent greets the caller as soon as the call connects; nothing is shown for the trigger itself.
+      state.responding = true;
+      $("cancelBtn").disabled = false;
+      if (state.mode === "text") {
+        state.pendingBubble = addBubble("agent pending", "Agent", "connecting you to an operator — the first answer can take ~10 s…");
+      } else {
+        setOrb("thinking", "Connecting you to an operator…");
+      }
+      setStatus("Agent greeting…", "busy");
+      if (state.sample) renderScript();
+      break;
     case "user_text":
     case "user_transcript":
       addBubble("user", "You", m.text);
@@ -398,7 +412,9 @@ async function startCall() {
     state.micAnalyser.fftSize = 512;
     src.connect(state.micNode);
     src.connect(state.micAnalyser);
-    setOrb("listening", state.sample ? "Listening — say the highlighted line" : "Listening — go ahead and speak");
+    if (!state.responding) {
+      setOrb("listening", state.sample ? "Listening — say the highlighted line" : "Listening — go ahead and speak");
+    }
     levelLoop(gen);
   } catch (err) {
     if (gen !== state.gen) return;
@@ -514,6 +530,7 @@ function addTrace(ev) {
   state.traces.push(ev);
   updateMetrics(ev);
   Viz.onTrace(ev);
+  Usage.onTrace(ev);
   voiceOrbFromTrace(ev);
   if (last && ev.t < last.t) { state.traces.sort((a, b) => a.t - b.t); renderTrace(); }
   else if (allowedSources().has(ev.source)) { appendRow(ev); }
@@ -555,6 +572,7 @@ function summarize(ev) {
   if (k === "decision.guard") return `[${d.agent}] other-topic ${fmt(d.other_topic)} · resolved ${fmt(d.resolved)}`;
   if (k === "decision.confirmation") return `verdict: ${d.verdict}`;
   if (k === "decision.call") return `${d.purpose} · ${(d.questions || []).join(", ")} · ${d.ms} ms` + (d.error ? ` · ERROR ${d.error}` : "");
+  if (k === "usage") return `${d.model} · ${d.purpose} · ${d.input_tokens} in / ${d.output_tokens} out`;
   if (k === "tool.call") {
     const args = Object.entries(d.args || {}).map(([a, b]) => `${a}=${fmt(b)}`).join(", ");
     return `${d.name}(${args}) → ${d.error ? "ERROR " + d.error : d.result}` + (d.ms != null ? `  · ${d.ms} ms` : "");

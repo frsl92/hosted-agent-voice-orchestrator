@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -10,9 +11,12 @@ from typing import Any, Protocol
 from agent_framework import Agent
 from pydantic import BaseModel
 
+from calltrace import emit_usage
 from prompts import EXTRACTION_INSTRUCTIONS, FOREGROUND_INSTRUCTIONS
 
 logger = logging.getLogger(__name__)
+
+MODEL_NAME = os.environ.get("AZURE_AI_MODEL_DEPLOYMENT_NAME", "gpt-5.6-luna")
 
 History = list[dict[str, str]]
 
@@ -72,11 +76,14 @@ class FoundryForegroundLLM:
 
     async def say(self, instruction: str, history: History) -> str:
         prompt = f"Conversation so far:\n{render_history(history)}\n\nYour task now: {instruction}"
-        return (await self._speaker.run(prompt)).text.strip()
+        response = await self._speaker.run(prompt)
+        emit_usage(MODEL_NAME, response.usage_details, "say")
+        return response.text.strip()
 
     async def extract(self, history: History) -> Extraction:
         try:
             response = await self._extractor.run(f"Conversation:\n{render_history(history)}")
+            emit_usage(MODEL_NAME, response.usage_details, "extract")
             value = response.value
             if not isinstance(value, _ExtractionModel):
                 value = _ExtractionModel.model_validate_json(response.text)

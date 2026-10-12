@@ -3,9 +3,13 @@ from __future__ import annotations
 import asyncio
 
 from conftest import Harness, Runner, analysis
-from foreground import CLOSING, IDLE, PROPOSING, RUNNING, new_state
+from foreground import IDLE, PROPOSING, RUNNING, new_state
+from lang import CALL_START, detect
+from lang import t as tr
 from llm import Extraction
 from task_store import TaskStatus
+
+CLOSING = tr("closing", "en")
 
 
 async def propose_both(h: Harness):
@@ -254,7 +258,7 @@ async def test_state_json_serializable_and_sessions_isolated():
     a.decision.confirmations.append("yes")
     await a.say("yes")
     a.assert_serializable()
-    assert b.state == new_state()
+    assert b.state == {**new_state(), "lang": "en"}
     out = await b.say("hi")
     assert not any("result-" in c for c in out)
     assert a.store.collect_completed("s2") == []
@@ -265,3 +269,56 @@ async def test_history_is_capped():
     for i in range(40):
         await h.say(f"hello {i}")
     assert len(h.state["history"]) <= 30
+
+
+async def test_call_start_greets_without_decision_or_user_history():
+    h = Harness(lang="pt")
+    out = await h.say(CALL_START)
+    assert len(out) == 1 and out[0].startswith("SAY[")
+    assert "greet" in h.llm.said[-1].lower()
+    assert h.decision.analyze_calls == 0
+    assert [m["role"] for m in h.state["history"]] == ["assistant"]
+    assert await h.say(CALL_START) == []  # never greets twice
+
+
+async def test_greeting_falls_back_to_portuguese_when_llm_down():
+    h = Harness(lang="pt")
+    h.llm.fail = True
+    out = await h.say(CALL_START)
+    assert out[0].startswith("Olá")
+
+
+async def test_portuguese_flow_uses_portuguese_fixed_strings():
+    h = Harness(lang="pt")
+    h.llm.fail = True
+    h.decision.analyses.append(analysis(billing=0.9, primary="billing"))
+    out = await h.say("Quero saber porque a minha fatura está tão alta")
+    assert "Está correto" in out[0] and "fatura" in out[0]
+    h.decision.confirmations.append("yes")
+    out = await h.say("sim")
+    assert out[0] == tr("ack", "pt")
+    assert out[-1] == tr("closing", "pt")
+
+
+async def test_language_switches_to_english_per_utterance():
+    h = Harness(lang="pt")
+    h.llm.fail = True
+    h.decision.analyses.append(analysis(billing=0.9, primary="billing"))
+    out = await h.say("Hello, I want to know why my bill is so high")
+    assert h.state["lang"] == "en" and "Is that right" in out[0]
+
+
+def test_detect_language():
+    assert detect("Olá, queria saber o estado da minha encomenda") == "pt"
+    assert detect("Hi, where is my order?") == "en"
+    assert detect("12345", "en") == "en" and detect("12345", "pt") == "pt"
+
+
+async def test_cancel_in_portuguese():
+    h = Harness(Runner(delay=5), lang="pt", max_wait=0.05)
+    await propose_both(h)
+    h.decision.confirmations.append("yes")
+    await h.say("sim")
+    assert len(h.store.active("s1")) == 2
+    await h.say("deixa estar, cancela isso")
+    assert h.store.active("s1") == []

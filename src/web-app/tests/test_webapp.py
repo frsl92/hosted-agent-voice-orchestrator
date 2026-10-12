@@ -1,6 +1,9 @@
+import asyncio
 import time
+import types
 
 import pytest
+from azure.ai.voicelive.models import ServerEventType
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -8,7 +11,7 @@ import app as webapp
 import auth
 from logtail import agent_session_id, parse_record
 from samples import AGENTS, SAMPLES
-from session import VoiceBridge, response_text, usage_of
+from session import CALL_START, VoiceBridge, response_text, usage_of
 
 
 def test_parse_trace_line():
@@ -153,3 +156,51 @@ def test_bridge_modes():
     assert text._session_config().modalities == ["text"]
     cfg = voice._session_config()
     assert "audio" in cfg.modalities and cfg.input_audio_transcription.model == "azure-speech"
+    assert cfg.input_audio_transcription.language.startswith("pt-PT") and "en-US" in cfg.input_audio_transcription.language
+    assert cfg.voice.name.startswith("pt-PT")
+
+
+def test_samples_are_portuguese():
+    text = " ".join(t for s in SAMPLES for t in s["turns"]).lower()
+    assert "encomenda" in text and "fatura" in text and "obrigado" in text
+    assert "order" not in text.replace("encomenda", "")
+
+
+class _Recorder:
+    def __init__(self):
+        self.sent = []
+
+    async def send_json(self, message):
+        self.sent.append(message)
+
+    async def send_bytes(self, data):
+        pass
+
+
+class _Conn:
+    def __init__(self):
+        self.items = []
+        self.responses = 0
+        self.conversation = types.SimpleNamespace(item=types.SimpleNamespace(create=self._create))
+        self.response = types.SimpleNamespace(create=self._respond)
+
+    async def _create(self, item):
+        self.items.append(item.content[0].text)
+
+    async def _respond(self):
+        self.responses += 1
+
+
+def test_session_greets_once_after_update():
+    sink = _Recorder()
+    bridge = VoiceBridge(sink, None, None, endpoint="", project_name="", project_endpoint="", agent_name="a", mode="text")
+    bridge._conn = _Conn()
+    event = types.SimpleNamespace(type=ServerEventType.SESSION_UPDATED)
+
+    async def go():
+        await bridge._on_event(event)
+        await bridge._on_event(event)
+
+    asyncio.run(go())
+    assert bridge._conn.items == [CALL_START] and bridge._conn.responses == 1
+    assert [m for m in sink.sent if m["type"] == "greeting"] == [{"type": "greeting"}]

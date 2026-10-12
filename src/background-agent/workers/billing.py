@@ -20,5 +20,5 @@ def build_billing_worker(client: Any) -> Agent:
 
 def billing_prompt(params: dict[str, Any]) -> str:
     period = params.get("invoice_period") or "current"
-    question = params.get("question") or "give an overview of the latest bill"
+    question = params.get("question") or "dar uma visão geral da última fatura"
     return f"Invoice period: {period}. Customer wants to know: {question}."

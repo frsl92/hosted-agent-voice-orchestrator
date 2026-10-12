@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from collections.abc import AsyncIterator
 from typing import Any
 
-from agent_framework import Message
+from agent_framework import Message, add_usage_details
 
+from calltrace import emit_usage
 from sub_agents import create_billing_agent, create_orders_agent, create_router_agent
 from orchestrator import BILLING, ORDERS, ROUTER, TurnSignals
 
@@ -58,7 +60,11 @@ class MafAgentRunner:
                 return ""
             return with_space(segment)
 
+        usage: Any = None
         async for update in maf_agent.run(messages, stream=True):
+            for c in update.contents or []:
+                if getattr(c, "type", None) == "usage":
+                    usage = add_usage_details(usage, c.usage_details)
             if any(getattr(c, "type", None) in _TOOL_TYPES for c in (update.contents or [])):
                 out = flush()
                 if out:
@@ -79,3 +85,4 @@ class MafAgentRunner:
         out = flush()
         if out:
             yield out
+        emit_usage(os.environ.get("AZURE_AI_MODEL_DEPLOYMENT_NAME", "gpt-5.6-luna"), usage, f"agent:{agent}")

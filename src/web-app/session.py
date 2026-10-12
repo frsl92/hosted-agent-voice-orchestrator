@@ -6,6 +6,7 @@ import asyncio
 import base64
 import contextlib
 import logging
+import os
 import time
 from typing import Any, Protocol
 
@@ -32,7 +33,11 @@ from logtail import LogTailer, agent_session_id
 
 logger = logging.getLogger("session")
 
-VOICE = "en-US-Ava:DragonHDLatestNeural"
+VOICE = os.environ.get("VOICE_NAME", "pt-PT-RaquelNeural")
+# First language is the primary one; English stays recognised because callers may switch.
+STT_LANGUAGE = os.environ.get("STT_LANGUAGE", "pt-PT,en-US")
+# Silent first user turn that makes the agent greet the caller; the agents recognise it and never show it.
+CALL_START = "[call connected]"
 
 
 class Sink(Protocol):
@@ -88,6 +93,7 @@ class VoiceBridge:
         self._lock = asyncio.Lock()
         self._tailer_task: asyncio.Task[None] | None = None
         self._responding = False
+        self._greeted = False
         self._t_input: int | None = None
         self._first_token_sent = False
         self._first_audio_sent = False
@@ -136,7 +142,7 @@ class VoiceBridge:
             voice=AzureStandardVoice(name=VOICE),
             input_audio_format=InputAudioFormat.PCM16,
             output_audio_format=OutputAudioFormat.PCM16,
-            input_audio_transcription=AudioInputTranscriptionOptions(model="azure-speech", language="en-US"),
+            input_audio_transcription=AudioInputTranscriptionOptions(model="azure-speech", language=STT_LANGUAGE),
             turn_detection=ServerVad(threshold=0.5, prefix_padding_ms=300, silence_duration_ms=500),
             input_audio_echo_cancellation=AudioEchoCancellation(),
             input_audio_noise_reduction=AudioNoiseReduction(type="azure_deep_noise_suppression"),
@@ -188,6 +194,19 @@ class VoiceBridge:
             except Exception:
                 logger.exception("failed to process %s", getattr(event, "type", "?"))
 
+    async def _greet(self) -> None:
+        """Once the session is configured, have the agent greet the caller like a call-center operator."""
+        if self._greeted or self._conn is None or self._responding or self._t_input is not None:
+            return
+        self._greeted = True
+        self._responding = True
+        self._t_input = now_ms()
+        self._first_token_sent = self._first_audio_sent = False
+        await self.trace("voice", "call.connected")
+        await self._json({"type": "greeting"})
+        await self._conn.conversation.item.create(item=UserMessageItem(content=[InputTextContentPart(text=CALL_START)]))
+        await self._conn.response.create()
+
     async def _on_event(self, event: Any) -> None:
         t = event.type
         if t == ServerEventType.SESSION_CREATED:
@@ -208,6 +227,7 @@ class VoiceBridge:
                 self._tailer_task = asyncio.create_task(tailer.run(), name="logtail")
         elif t == ServerEventType.SESSION_UPDATED:
             await self.trace("voice", "session.updated")
+            await self._greet()
         elif t == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
             await self._json({"type": "interrupt"})
             await self.trace("voice", "speech.started")
