@@ -31,7 +31,6 @@ from azure.ai.voicelive.models import (
     AzureStandardVoice,
     InputAudioFormat,
     InputTextContentPart,
-    LlmInterimResponseConfig,
     Modality,
     OutputAudioFormat,
     RequestSession,
@@ -174,7 +173,6 @@ async def run(endpoint: str, agent_name: str, project: str, text_mode: bool) -> 
                 turn_detection=ServerVad(threshold=0.5, prefix_padding_ms=300, silence_duration_ms=500),
                 input_audio_echo_cancellation=AudioEchoCancellation(),
                 input_audio_noise_reduction=AudioNoiseReduction(type="azure_deep_noise_suppression"),
-                interim_response=LlmInterimResponseConfig(latency_threshold_ms=500),
             )
         await conn.session.update(session=session)
         turn_done = asyncio.Event()

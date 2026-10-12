@@ -19,7 +19,6 @@ from azure.ai.voicelive.models import (
     AzureStandardVoice,
     InputAudioFormat,
     InputTextContentPart,
-    LlmInterimResponseConfig,
     Modality,
     OutputAudioFormat,
     RequestSession,
@@ -146,7 +145,6 @@ class VoiceBridge:
             turn_detection=ServerVad(threshold=0.5, prefix_padding_ms=300, silence_duration_ms=500),
             input_audio_echo_cancellation=AudioEchoCancellation(),
             input_audio_noise_reduction=AudioNoiseReduction(type="azure_deep_noise_suppression"),
-            interim_response=LlmInterimResponseConfig(latency_threshold_ms=500),
         )
 
     # ------------------------------------------------------------------ browser -> Voice Live
