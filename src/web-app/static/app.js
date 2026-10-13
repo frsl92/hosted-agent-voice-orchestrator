@@ -598,12 +598,12 @@ async function openMic(gen) {
     };
   }
   const src = state.ctx.createMediaStreamSource(state.micStream);
-  state.micNode = new AudioWorkletNode(state.ctx, "mic-processor");
+  state.micNode = new AudioWorkletNode(state.ctx, "mic-processor", { processorOptions: { autoGain: flag("gain", true) } });
   let lastMsg = 0, maxGap = 0, frames = 0, quiet = 0;
   state.micNode.port.onmessage = (e) => {
     if (!(e.data instanceof ArrayBuffer)) {
       const s = e.data;
-      sendDiag({ event: "mic.stats", peak: +s.peak.toFixed(3), rms: +s.rms.toFixed(4), frames, maxGapMs: Math.round(maxGap),
+      sendDiag({ event: "mic.stats", peak: +s.peak.toFixed(3), rms: +s.rms.toFixed(4), gain: +(s.gain || 1).toFixed(1), frames, maxGapMs: Math.round(maxGap),
         buffered: state.ws ? state.ws.bufferedAmount : null, muted: state.muted });
       frames = 0; maxGap = 0;
       quiet = isReady() && s.peak < 0.01 && !state.muted ? quiet + 1 : 0;
@@ -673,7 +673,7 @@ function levelLoop(gen) {
 async function ensureAudio() {
   if (!state.ctx) {
     state.ctx = new AudioContext({ sampleRate: 24000 });
-    await state.ctx.audioWorklet.addModule("/static/mic-worklet.js");
+    await state.ctx.audioWorklet.addModule("/static/mic-worklet.js?v=2");
     state.outAnalyser = state.ctx.createAnalyser();
     state.outAnalyser.fftSize = 512;
     state.outAnalyser.connect(state.ctx.destination);
