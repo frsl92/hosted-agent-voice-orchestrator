@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from decision import TurnAnalysis
+from decision import Confirmation, TurnAnalysis
 from foreground import Foreground, new_state
 from llm import Extraction
 from task_store import TaskStore
@@ -18,7 +18,7 @@ class FakeDecision:
 
     def __init__(self) -> None:
         self.analyses: list[TurnAnalysis] = []
-        self.confirmations: list[str] = []
+        self.confirmations: list[str | tuple[str, float]] = []
         self.analyze_calls = 0
         self.confirm_calls = 0
 
@@ -26,9 +26,10 @@ class FakeDecision:
         self.analyze_calls += 1
         return self.analyses.pop(0) if self.analyses else TurnAnalysis()
 
-    async def confirmation(self, transcript: str) -> str:
+    async def confirmation(self, transcript: str) -> Confirmation:
         self.confirm_calls += 1
-        return self.confirmations.pop(0) if self.confirmations else "neither"
+        item = self.confirmations.pop(0) if self.confirmations else "neither"
+        return Confirmation(*((item, 0.0) if isinstance(item, str) else item))
 
 
 class FakeLLM:

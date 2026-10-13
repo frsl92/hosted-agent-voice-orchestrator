@@ -7,7 +7,6 @@ globals), so it can be persisted by the host between ``/responses`` calls.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -274,16 +273,14 @@ class Orchestrator:
         state["reasks"] = 0
 
     async def _plan_confirmation(self, state: dict[str, Any], turn: _Turn) -> _Plan:
-        transcript = self._transcript(state)
-        # Analysed in parallel so "ok, never mind, that's all" is not mistaken for a "yes".
-        verdict, analysis = await asyncio.gather(
-            self._decision.confirmation(transcript), self._decision.analyze_turn(transcript)
-        )
-        if verdict == "yes" and analysis.ok and analysis.confident_end:
+        # One Decision-1 call reads yes/no/neither and "that's all" together, so "ok, never mind" is not a "yes".
+        conf = await self._decision.confirmation(self._transcript(state))
+        verdict = conf.verdict
+        if verdict == "yes" and conf.confident_end:
             verdict = "no"
         proposed = [t for t in state["proposed"] if t in TOPICS]
         emit(
-            "decision.confirmation", verdict=verdict, wants_to_end=analysis.wants_to_end,
+            "decision.confirmation", verdict=verdict, wants_to_end=conf.wants_to_end,
             proposed=[{"topic": t} for t in proposed],
         )
 
@@ -310,7 +307,8 @@ class Orchestrator:
 
         self._reset_proposal(state)
         emit("phase", phase=IDLE, proposed=[])
-        return await self._plan_router(state, turn, analysis=analysis, correction=True)
+        # Only a rejection needs the full topic analysis (the customer may be correcting the plan).
+        return await self._plan_router(state, turn, correction=True)
 
     async def _plan_sub(self, state: dict[str, Any], turn: _Turn) -> _Plan:
         active = state["active_agent"]

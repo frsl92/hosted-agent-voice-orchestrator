@@ -38,6 +38,8 @@ async def test_confirm_yes_launches_runs_delivers_once_and_closes(h: Harness):
     await propose_both(h)
     h.decision.confirmations.append("yes")
     out = await h.say("yes")
+    assert h.decision.analyze_calls == 1  # only the proposal's analysis; confirming costs one call
+    assert h.decision.confirm_calls == 1
     assert out[0].startswith("Give me a moment")
     joined = " ".join(out)
     assert joined.count("result-billing") == 1 and joined.count("result-order_status") == 1
@@ -74,7 +76,7 @@ async def test_confirm_no_without_topic_asks_what_to_change(h: Harness):
 
 async def test_yes_with_confident_end_does_not_launch(h: Harness):
     await propose_both(h)
-    h.decision.confirmations.append("yes")
+    h.decision.confirmations.append(("yes", 0.95))
     h.decision.analyses.append(analysis(end=0.95))
     out = await h.say("ok never mind, that's all")
     assert h.runner.started == []

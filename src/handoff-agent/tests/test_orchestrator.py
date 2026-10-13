@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from decision import TurnAnalysis
+from decision import Confirmation, TurnAnalysis
 from lang import CALL_START
 from orchestrator import BILLING, ORDERS, ROUTER, Orchestrator, new_state
 
@@ -24,7 +24,8 @@ class FakeDecision:
 
     async def confirmation(self, transcript):
         self.confirm_calls += 1
-        return self.verdicts.pop(0) if self.verdicts else "neither"
+        item = self.verdicts.pop(0) if self.verdicts else "neither"
+        return Confirmation(*((item, 0.0) if isinstance(item, str) else item))
 
     async def on_topic(self, transcript, topic):
         self.guard_calls.append(topic)
@@ -185,7 +186,7 @@ async def test_unclear_answer_reasks_then_opens_the_question(state):
 
 async def test_yes_that_is_really_goodbye_ends_the_call(state):
     orch, _, runner = make(
-        [analysis(billing=0.9, primary="billing"), analysis(end=0.95)], verdicts=["yes"]
+        [analysis(billing=0.9, primary="billing"), analysis(end=0.95)], verdicts=[("yes", 0.95)]
     )
     await say(orch, state, "my bill")
     await say(orch, state, "ok thanks, that's all")

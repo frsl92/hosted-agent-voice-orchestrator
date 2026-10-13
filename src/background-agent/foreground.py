@@ -184,15 +184,12 @@ class Foreground:
 
     async def _handle_confirmation(self, state: dict[str, Any], key: str) -> AsyncIterator[str]:
         transcript = self._transcript(state)
-        # Analyse in parallel so "ok never mind, that's all" is not mistaken for a "yes".
-        verdict, analysis = await asyncio.gather(
-            self.decision.confirmation(transcript), self.decision.analyze_turn(transcript)
-        )
-        if CANCEL_RE.search(state["history"][-1]["text"]) or (
-            verdict == "yes" and analysis.ok and analysis.confident_end
-        ):
+        # One Decision-1 call reads yes/no/neither and "that's all" together, so "ok, never mind" is not a "yes".
+        conf = await self.decision.confirmation(transcript)
+        verdict = conf.verdict
+        if CANCEL_RE.search(state["history"][-1]["text"]) or (verdict == "yes" and conf.confident_end):
             verdict = "no"
-        emit("decision.confirmation", verdict=verdict, wants_to_end=analysis.wants_to_end, proposed=state["proposed"])
+        emit("decision.confirmation", verdict=verdict, wants_to_end=conf.wants_to_end, proposed=state["proposed"])
         if verdict == "yes":
             async for chunk in self._launch_and_wait(state, key):
                 yield chunk
@@ -200,7 +197,8 @@ class Foreground:
             state["proposed"] = []
             state["phase"] = IDLE
             state["reasks"] = 0
-            async for chunk in self._handle_request(state, key, correction=True, analysis=analysis):
+            # Only a rejection needs the full topic analysis (the customer may be correcting the plan).
+            async for chunk in self._handle_request(state, key, correction=True):
                 yield chunk
         else:
             state["reasks"] += 1

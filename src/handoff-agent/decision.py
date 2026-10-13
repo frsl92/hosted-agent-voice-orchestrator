@@ -67,6 +67,18 @@ def format_transcript(turns: list[tuple[str, str]], limit: int = 6) -> str:
 
 
 @dataclass
+class Confirmation:
+    """Decision-1's reading of the customer's reply to a proposed plan."""
+
+    verdict: str = "neither"
+    wants_to_end: float = 0.0
+
+    @property
+    def confident_end(self) -> bool:
+        return self.wants_to_end >= END_THRESHOLD
+
+
+@dataclass
 class TurnAnalysis:
     """Decision-1's reading of the latest customer utterance."""
 
@@ -217,8 +229,8 @@ class DecisionClient:
             logger.warning("on_topic guard failed, staying with current agent: %s", exc)
             return 0.0, 0.0, False
 
-    async def confirmation(self, transcript: str) -> str:
-        """Did the customer confirm a proposal? Returns ``yes``, ``no`` or ``neither``."""
+    async def confirmation(self, transcript: str) -> Confirmation:
+        """Did the customer confirm a proposal? One call answers yes/no/neither and whether they want to end."""
         questions = {
             "confirmation": {
                 "type": "choice",
@@ -228,16 +240,22 @@ class DecisionClient:
                     "no": "the customer disagrees, corrects, or rejects the plan",
                     "neither": "the customer says something unrelated or ambiguous",
                 },
-            }
+            },
+            "wants_to_end": {
+                "type": "noul",
+                "instructions": "Does the customer's latest message say they have nothing else and want to end the call?",
+            },
         }
         try:
-            a = (await self.ask(transcript, questions, "confirmation"))["confirmation"]
-            if float(a.get("confidence", 0.0)) < CONFIRM_THRESHOLD:
-                return "neither"
-            return a["choice"]
+            a = await self.ask(transcript, questions, "confirmation")
+            ends = float(a["wants_to_end"]["noul"])
+            c = a["confirmation"]
+            if float(c.get("confidence", 0.0)) < CONFIRM_THRESHOLD:
+                return Confirmation("neither", ends)
+            return Confirmation(c["choice"], ends)
         except (DecisionError, KeyError, TypeError, ValueError) as exc:
             logger.warning("confirmation failed: %s", exc)
-            return "neither"
+            return Confirmation("neither")
 
     async def aclose(self) -> None:
         await self._http.aclose()

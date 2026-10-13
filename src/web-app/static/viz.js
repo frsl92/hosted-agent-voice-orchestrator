@@ -187,9 +187,9 @@ const Viz = (() => {
   // ---------------------------------------------------------------- timeline
   function describeStep(k, d) {
     switch (k) {
-      case "decision.analyze": return ["🧠", "decision", "Decision-1 analysed the turn", `billing ${pct(d.billing ?? 0)} · order status ${pct(d.order_status ?? 0)} · primary ${d.primary_topic ?? "–"}${d.wants_to_end ? " · wants to end" : ""}${d.ok === false ? " · unclear" : ""}`];
+      case "decision.analyze": return ["🧠", "decision", "Decision-1 analysed the turn", `billing ${pct(d.billing ?? 0)} · order status ${pct(d.order_status ?? 0)} · primary ${d.primary_topic ?? "–"}${(d.wants_to_end ?? 0) >= THRESH.wants_to_end ? " · wants to end" : ""}${d.ok === false ? " · unclear" : ""}`];
       case "decision.guard": return ["🛡", "decision", d.ok ? "Guard: stay with this agent" : "Guard: customer moved on", `other topic ${pct(d.other_topic ?? 0)} · resolved ${pct(d.resolved ?? 0)}`];
-      case "decision.confirmation": return ["🙋", "decision", `Confirmation: ${d.verdict}`, d.wants_to_end ? "customer also wants to end" : ""];
+      case "decision.confirmation": return ["🙋", "decision", `Confirmation: ${d.verdict}`, (d.wants_to_end ?? 0) >= THRESH.wants_to_end ? "customer also wants to end" : ""];
       case "llm.extract": return ["🔎", "decision", "LLM extracted details", short({ order: d.order_id, period: d.invoice_period }, 120)];
       case "handoff": return d.refused ? ["⛔", "err", `Handoff refused ${d.source} → ${d.target}`, ""] : ["🔀", "handoff", `Handoff ${d.source} → ${d.target}`, ""];
       case "agent.start": return ["🗣", "speak", `${d.agent} starts speaking`, d.directive ? short(d.directive, 140) : ""];
@@ -282,9 +282,9 @@ const Viz = (() => {
 
   function paintDerived(card, k, d) {
     const label = { "decision.analyze": "Routing decision", "decision.guard": "Guard result", "decision.confirmation": "Confirmation" }[k];
-    const body = k === "decision.analyze" ? `topics: ${(d.topics || []).join(", ") || "none"} · primary: ${d.primary_topic ?? "–"}${d.wants_to_end ? " · wants to end" : ""}${d.ok === false ? " · unclear" : ""}`
+    const body = k === "decision.analyze" ? `topics: ${(d.topics || []).join(", ") || "none"} · primary: ${d.primary_topic ?? "–"}${(d.wants_to_end ?? 0) >= THRESH.wants_to_end ? " · wants to end" : ""}${d.ok === false ? " · unclear" : ""}`
       : k === "decision.guard" ? `${d.ok ? "stay with " + d.agent : "leave " + d.agent}${(d.queue || []).length ? " · queue: " + d.queue.join(", ") : ""}`
-      : `verdict: ${d.verdict}${d.wants_to_end ? " · wants to end" : ""}`;
+      : `verdict: ${d.verdict}${(d.wants_to_end ?? 0) >= THRESH.wants_to_end ? " · wants to end" : ""}`;
     card.querySelector(".derived-slot").innerHTML = `<div class="derived"><b>${label}:</b> ${esc(body)}</div>`;
   }
 
