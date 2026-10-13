@@ -33,7 +33,9 @@ EXTRACTION_INSTRUCTIONS = (
     "Return billing_question as a short phrase describing what the customer wants to know about their bill "
     "(empty string if none). Return order_question likewise for the order (empty string if none). "
     "Write those two phrases in the same language the customer used. "
-    "Use the whole conversation to resolve corrections, but describe only what the customer is asking for in their MOST RECENT request, "
+    "Return dropped_topics as the list of topics ('billing', 'order_status') the customer explicitly said they no longer "
+    "want (for example 'forget the bill', 'não quero a fatura'); otherwise an empty list. "
+    "Use the whole conversation to resolve corrections (the latest value the customer gave wins), but describe only what the customer is asking for in their MOST RECENT request, "
     "not questions that were already answered earlier."
 )
 

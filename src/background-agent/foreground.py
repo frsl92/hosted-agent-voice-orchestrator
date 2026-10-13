@@ -194,11 +194,12 @@ class Foreground:
             async for chunk in self._launch_and_wait(state, key):
                 yield chunk
         elif verdict == "no":
+            previous = state["proposed"]
             state["proposed"] = []
             state["phase"] = IDLE
             state["reasks"] = 0
             # Only a rejection needs the full topic analysis (the customer may be correcting the plan).
-            async for chunk in self._handle_request(state, key, correction=True):
+            async for chunk in self._handle_request(state, key, correction=True, previous=previous):
                 yield chunk
         else:
             state["reasks"] += 1
@@ -222,8 +223,16 @@ class Foreground:
     # ---- new request / small talk --------------------------------------------------------
 
     async def _handle_request(
-        self, state: dict[str, Any], key: str, correction: bool = False, analysis: TurnAnalysis | None = None
+        self, state: dict[str, Any], key: str, correction: bool = False, analysis: TurnAnalysis | None = None,
+        previous: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[str]:
+        ex: Extraction | None = None
+        if analysis is None:
+            # Read the topics and the details (order id, period) in parallel: it saves a model round trip before
+            # the confirmation question, and also covers a rejected plan being corrected.
+            analysis, ex = await asyncio.gather(
+                self.decision.analyze_turn(self._transcript(state)), self.llm.extract(state["history"])
+            )
         analysis = analysis or await self.decision.analyze_turn(self._transcript(state))
         emit(
             "decision.analyze", billing=analysis.billing, order_status=analysis.order_status,
@@ -261,8 +270,16 @@ class Foreground:
             if pending not in topics:
                 topics.append(pending)
 
+        if previous and ex is not None and self._amends(previous, ex):
+            # "Actually the order is 3472": keep the rest of the rejected plan instead of forgetting it.
+            for p in previous:
+                if p["topic"] not in topics:
+                    topics.append(p["topic"])
+        if ex is not None:
+            topics = [tp for tp in topics if tp not in ex.dropped_topics]
+
         if topics:
-            async for chunk in self._propose(state, key, topics):
+            async for chunk in self._propose(state, key, topics, ex):
                 yield chunk
             return
 
@@ -275,19 +292,33 @@ class Foreground:
             return
 
         if correction:
-            yield await self._say(state, "Say no problem and ask what they would like to change.",
+            yield await self._say(state, "Say no problem and ask what they would like to change. Do not ask them to "
+                                  "confirm anything and do not offer to look anything up yet.",
                                   self._tr(state, "change"))
             return
 
         yield await self._say(
             state,
             "Reply conversationally to the customer's last message. You can only help with their bill and order status;"
-            " if they ask for something else, say so politely. If it is unclear, ask one clarifying question.",
+            " if they ask for something else, say so politely. If it is unclear, ask one clarifying question."
+            " Never ask them to confirm a request and never offer to start a lookup yourself.",
             self._tr(state, "which_one"),
         )
 
-    async def _propose(self, state: dict[str, Any], key: str, topics: list[str]) -> AsyncIterator[str]:
-        ex = await self.llm.extract(state["history"])
+    @staticmethod
+    def _amends(previous: list[dict[str, Any]], ex: Extraction) -> bool:
+        """True when the extraction changed a detail of the rejected plan (a new order id or bill period)."""
+        for p in previous:
+            if p["topic"] == TOPIC_ORDERS and ex.order_id and ex.order_id != p["params"].get("order_id"):
+                return True
+            if p["topic"] == TOPIC_BILLING and ex.invoice_period != p["params"].get("invoice_period"):
+                return True
+        return False
+
+    async def _propose(
+        self, state: dict[str, Any], key: str, topics: list[str], ex: Extraction | None = None
+    ) -> AsyncIterator[str]:
+        ex = ex or await self.llm.extract(state["history"])
         emit("llm.extract", order_id=ex.order_id, invoice_period=ex.invoice_period,
              billing_question=ex.billing_question, order_question=ex.order_question, topics=topics)
         if TOPIC_ORDERS in topics and not ex.order_id:

@@ -27,6 +27,7 @@ class Extraction:
     invoice_period: str = "current"
     billing_question: str = ""
     order_question: str = ""
+    dropped_topics: tuple[str, ...] = ()
 
 
 class ForegroundLLM(Protocol):
@@ -47,6 +48,7 @@ class _ExtractionModel(BaseModel):
     invoice_period: str = "current"
     billing_question: str = ""
     order_question: str = ""
+    dropped_topics: list[str] = []
 
 
 _ORDER_RE = re.compile(r"\b(\d{4,})\b")
@@ -89,7 +91,10 @@ class FoundryForegroundLLM:
                 value = _ExtractionModel.model_validate_json(response.text)
             order_id = re.sub(r"\D", "", value.order_id)
             period = "previous" if value.invoice_period.lower().startswith("prev") else "current"
-            return Extraction(order_id or regex_order_id(history), period, value.billing_question, value.order_question)
+            dropped = tuple(t for t in value.dropped_topics if t in ("billing", "order_status"))
+            return Extraction(
+                order_id or regex_order_id(history), period, value.billing_question, value.order_question, dropped
+            )
         except Exception as exc:
             logger.warning("parameter extraction failed, using regex fallback: %s", exc)
             return Extraction(order_id=regex_order_id(history))

@@ -53,6 +53,28 @@ async def test_confirm_yes_launches_runs_delivers_once_and_closes(h: Harness):
     h.assert_serializable()
 
 
+async def test_confirm_no_with_new_order_id_keeps_the_billing_request(h: Harness):
+    await propose_both(h)
+    h.decision.confirmations.append("no")
+    h.decision.analyses.append(analysis())  # the correction alone names no topic (as seen with Decision-1)
+    h.llm.extraction = Extraction(order_id="3472", billing_question="why it is high")
+    await h.say("wait, actually the order is 3472")
+    assert h.runner.started == []
+    assert h.state["phase"] == PROPOSING
+    proposed = {p["topic"]: p["params"] for p in h.state["proposed"]}
+    assert set(proposed) == {"billing", "order_status"}
+    assert proposed["order_status"]["order_id"] == "3472"
+
+
+async def test_confirm_no_can_drop_a_topic(h: Harness):
+    await propose_both(h)
+    h.decision.confirmations.append("no")
+    h.decision.analyses.append(analysis())
+    h.llm.extraction = Extraction(order_id="3472", dropped_topics=("billing",))
+    await h.say("forget the bill, the order is 3472")
+    assert [p["topic"] for p in h.state["proposed"]] == ["order_status"]
+
+
 async def test_confirm_no_reproposes_with_correction(h: Harness):
     await propose_both(h)
     h.decision.confirmations.append("no")
@@ -61,7 +83,7 @@ async def test_confirm_no_reproposes_with_correction(h: Harness):
     await h.say("no, the order is 67890")
     assert h.runner.started == []
     assert h.state["phase"] == PROPOSING
-    assert [p["topic"] for p in h.state["proposed"]] == ["order_status"]
+    assert [p["topic"] for p in h.state["proposed"]] == ["order_status", "billing"]
     assert h.state["proposed"][0]["params"]["order_id"] == "67890"
 
 

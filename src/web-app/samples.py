@@ -84,6 +84,20 @@ SAMPLES: list[dict[str, Any]] = [
         ],
     },
     {
+        "id": "bill-order-correction",
+        "title": "Bill and order, then a correction",
+        "description": (
+            "Asks about the last bill and order 12345, then corrects the order number before confirming. "
+            "The agent should keep both requests, confirm the corrected plan once, and answer both."
+        ),
+        "turns": [
+            "Olá, queria saber o valor da minha última fatura e também o estado da encomenda 12345.",
+            "Espera, quero corrigir: afinal a encomenda é a 67890.",
+            "Sim, é isso.",
+            "Perfeito, era só isso. Até logo!",
+        ],
+    },
+    {
         "id": "two-orders",
         "title": "Two orders, one after the other",
         "description": (
