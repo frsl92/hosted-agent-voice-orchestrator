@@ -237,7 +237,11 @@ class DecisionClient:
                 "instructions": "The agent proposed a plan and asked the customer to confirm. What was the customer's reply?",
                 "criteria": {
                     "yes": "the customer agrees or confirms the plan is right",
-                    "no": "the customer disagrees, corrects, or rejects the plan",
+                    "amend": (
+                        "the customer corrects or adds a detail of the plan (for example a different order number) "
+                        "but still wants everything that was proposed"
+                    ),
+                    "no": "the customer rejects the plan or no longer wants one of the proposed topics",
                     "neither": "the customer says something unrelated or ambiguous",
                 },
             },

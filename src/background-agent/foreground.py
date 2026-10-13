@@ -193,13 +193,16 @@ class Foreground:
         if verdict == "yes":
             async for chunk in self._launch_and_wait(state, key):
                 yield chunk
-        elif verdict == "no":
+        elif verdict in ("no", "amend"):
             previous = state["proposed"]
             state["proposed"] = []
             state["phase"] = IDLE
             state["reasks"] = 0
-            # Only a rejection needs the full topic analysis (the customer may be correcting the plan).
-            async for chunk in self._handle_request(state, key, correction=True, previous=previous):
+            # The customer may be correcting the plan, so it needs the full topic analysis. An "amend" keeps every
+            # topic of the plan; a "no" keeps them only when a detail changed (see _amends).
+            async for chunk in self._handle_request(
+                state, key, correction=True, previous=previous, keep_previous=verdict == "amend"
+            ):
                 yield chunk
         else:
             state["reasks"] += 1
@@ -224,7 +227,7 @@ class Foreground:
 
     async def _handle_request(
         self, state: dict[str, Any], key: str, correction: bool = False, analysis: TurnAnalysis | None = None,
-        previous: list[dict[str, Any]] | None = None,
+        previous: list[dict[str, Any]] | None = None, keep_previous: bool = False,
     ) -> AsyncIterator[str]:
         ex: Extraction | None = None
         if analysis is None:
@@ -270,7 +273,7 @@ class Foreground:
             if pending not in topics:
                 topics.append(pending)
 
-        if previous and ex is not None and self._amends(previous, ex):
+        if previous and (keep_previous or (ex is not None and self._amends(previous, ex))):
             # "Actually the order is 3472": keep the rest of the rejected plan instead of forgetting it.
             for p in previous:
                 if p["topic"] not in topics:

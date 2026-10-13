@@ -87,6 +87,17 @@ async def test_confirm_no_reproposes_with_correction(h: Harness):
     assert h.state["proposed"][0]["params"]["order_id"] == "67890"
 
 
+async def test_confirm_amend_keeps_every_topic_and_asks_again(h: Harness):
+    await propose_both(h)
+    h.decision.confirmations.append("amend")
+    h.decision.analyses.append(analysis())
+    h.llm.extraction = Extraction(order_id="12345", billing_question="the last invoice")
+    await h.say("wait, I mean the last invoice")
+    assert h.runner.started == []
+    assert h.state["phase"] == PROPOSING
+    assert {p["topic"] for p in h.state["proposed"]} == {"billing", "order_status"}
+
+
 async def test_confirm_no_without_topic_asks_what_to_change(h: Harness):
     await propose_both(h)
     h.decision.confirmations.append("no")
