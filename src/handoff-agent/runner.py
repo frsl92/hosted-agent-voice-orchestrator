@@ -34,16 +34,20 @@ class MafAgentRunner:
     def __init__(self, client: Any) -> None:
         self._client = client
 
-    async def stream(
-        self, agent: str, history: list[dict[str, str]], directive: str | None, signals: TurnSignals
+    def stream(
+        self, agent: str, history: list[dict[str, str]], directive: str | None, signals: TurnSignals, state: dict | None = None
     ) -> AsyncIterator[str]:
-        """Stream spoken text live.
+        maf_agent = _FACTORIES[agent](self._client, directive, signals)
+        messages = [Message(m["role"], [m["text"]]) for m in history]
+        return self._consume(agent, maf_agent.run(messages, stream=True), signals)
+
+    @staticmethod
+    async def _consume(agent: str, updates: Any, signals: TurnSignals) -> AsyncIterator[str]:
+        """Turn agent updates (local MAF or relayed from a remote agent) into spoken text, live.
 
         After ``return_to_router`` has been called the model tends to repeat its answer, so text
         produced from then on is buffered per segment and only emitted if it adds something new.
         """
-        maf_agent = _FACTORIES[agent](self._client, directive, signals)
-        messages = [Message(m["role"], [m["text"]]) for m in history]
         emitted = ""
         buffered: list[str] = []
         pending_space = False
@@ -63,7 +67,7 @@ class MafAgentRunner:
 
         usage: Any = None
         unsegmented = False  # spoken text not yet closed by a segment break
-        async for update in maf_agent.run(messages, stream=True):
+        async for update in updates:
             contents = update.contents or []
             for c in contents:
                 if getattr(c, "type", None) == "usage":

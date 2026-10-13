@@ -39,7 +39,7 @@ class FakeRunner:
         self.calls = []
         self.returns = list(returns)  # agent names that call return_to_router
 
-    async def stream(self, agent, history, directive, signals):
+    async def stream(self, agent, history, directive, signals, state=None):
         self.calls.append({"agent": agent, "directive": directive, "history": history})
         if agent in self.returns:
             self.returns.remove(agent)
@@ -131,7 +131,7 @@ async def test_confirmed_sub_agent_waiting_for_a_detail_keeps_the_call(state):
     orch, _, runner = make([analysis(orders=0.95, primary="order_status")], verdicts=["yes"])
     runner.calls = []
 
-    async def asking(agent, history, directive, signals):
+    async def asking(agent, history, directive, signals, state=None):
         runner.calls.append({"agent": agent, "directive": directive, "history": history})
         yield "What is the order number?"
 

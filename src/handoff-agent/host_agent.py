@@ -27,7 +27,19 @@ def build_default_orchestrator() -> Orchestrator:
         model=os.environ["AZURE_AI_MODEL_DEPLOYMENT_NAME"],
         credential=DefaultAzureCredential(),
     )
-    return Orchestrator(DecisionClient(), MafAgentRunner(client))
+    local = MafAgentRunner(client)
+    if os.environ.get("SUBAGENT_MODE", "remote").lower() == "remote":
+        from remote_runner import RemoteSubAgentRunner, agent_names_from_env, build_openai_for, delegation_from_env
+
+        runner = RemoteSubAgentRunner(
+            local,
+            build_openai_for(os.environ["FOUNDRY_PROJECT_ENDPOINT"]),
+            agent_names_from_env(),
+            delegate_user=delegation_from_env(),
+        )
+    else:
+        runner = local
+    return Orchestrator(DecisionClient(), runner)
 
 
 def _user_text(messages: Any) -> str:

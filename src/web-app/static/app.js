@@ -772,8 +772,12 @@ function summarize(ev) {
   if (k === "usage") return `${d.model} · ${d.purpose} · ${d.input_tokens} in / ${d.output_tokens} out`;
   if (k === "tool.call") {
     const args = Object.entries(d.args || {}).map(([a, b]) => `${a}=${fmt(b)}`).join(", ");
-    return `${d.name}(${args}) → ${d.error ? "ERROR " + d.error : d.result}` + (d.ms != null ? `  · ${d.ms} ms` : "");
+    return `${d.name}(${args}) → ${d.error ? "ERROR " + d.error : d.result}` + (d.remote ? `  · on ${d.remote}` : "") + (d.ms != null ? `  · ${d.ms} ms` : "");
   }
+  if (k === "subagent.call")
+    return `${d.agent} · ${d.new_session ? "new session" : "reusing session " + d.agent_session_id}`;
+  if (k === "subagent.done") return `${d.agent} · session ${d.agent_session_id} · ${d.ms} ms`;
+  if (k === "subagent.session_lost") return `${d.agent} · session ${d.agent_session_id} gone, starting a new one — ${d.error}`;
   if (k === "turn.start") return `[${d.agent}${d.phase ? "/" + d.phase : ""}] “${d.user}”`;
   if (k === "turn.end") return `[${d.agent}] ${d.ms} ms${d.handoffs ? ` · ${d.handoffs} handoff(s)` : ""}${d.ended ? " · call ended" : ""} — “${d.reply}”`;
   if (k === "agent.start") return `${d.agent}${d.directive ? " · directive: " + d.directive : ""}`;

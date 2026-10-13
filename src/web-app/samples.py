@@ -84,6 +84,21 @@ SAMPLES: list[dict[str, Any]] = [
         ],
     },
     {
+        "id": "two-orders",
+        "title": "Two orders, one after the other",
+        "description": (
+            "Asks about order 12345 and, once the answer is given, about order 67890. With the remote sub-agents, "
+            "the second lookup reuses the same Foundry session of the order sub-agent."
+        ),
+        "turns": [
+            "Olá, queria saber o estado da encomenda 12345.",
+            "Sim, é essa, pode verificar.",
+            "Obrigado. Já agora, pode ver-me também a encomenda 67890?",
+            "Sim, é essa, pode verificar.",
+            "Perfeito, era só isso. Até logo!",
+        ],
+    },
+    {
         "id": "topic-switch",
         "title": "Change of topic",
         "description": (

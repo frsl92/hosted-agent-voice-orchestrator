@@ -6,6 +6,7 @@ requires-python = ">=3.13"
 dependencies = [
     "agent-framework-foundry",
     "agent-framework-foundry-hosting>=1.0.0b260813",
+    "azure-ai-projects>=2.3.0",
     "azure-identity",
     "httpx",
     "python-dotenv",

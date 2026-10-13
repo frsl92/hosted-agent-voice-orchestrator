@@ -61,7 +61,12 @@ class AgentRunner(Protocol):
     """Runs one agent for one turn and streams its spoken text."""
 
     def stream(
-        self, agent: str, history: list[dict[str, str]], directive: str | None, signals: TurnSignals
+        self,
+        agent: str,
+        history: list[dict[str, str]],
+        directive: str | None,
+        signals: TurnSignals,
+        state: dict[str, Any] | None = None,
     ) -> AsyncIterator[str]: ...
 
 
@@ -78,6 +83,8 @@ def new_state() -> dict[str, Any]:
         "proposed": [],
         "reasks": 0,
         "lang": lang.DEFAULT,
+        # Foundry session ids of the remote sub-agents, so repeated calls reuse the same session.
+        "remote": {},
     }
 
 
@@ -398,7 +405,7 @@ class Orchestrator:
         first_token_ms: int | None = None
         emit("agent.start", agent=plan.agent, directive=plan.directive, ends_call=plan.ends_call)
         try:
-            async for chunk in self._runner.stream(plan.agent, history, plan.directive, signals):
+            async for chunk in self._runner.stream(plan.agent, history, plan.directive, signals, state=state):
                 if not chunk:
                     continue
                 if needs_separator and not chunk[0].isspace():

@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+tests/
+uv.lock
+pyproject.toml
+.gitignore
+.env.example

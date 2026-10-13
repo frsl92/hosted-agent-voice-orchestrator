@@ -21,7 +21,8 @@ PORT = ARGS[1] if len(ARGS) > 1 else "8000"
 WHICH = ARGS[2] if len(ARGS) > 2 else "order-tracking"
 FULL = "--full" in sys.argv
 SHOW = {"decision.call", "decision.analyze", "decision.guard", "decision.confirmation", "handoff", "phase",
-        "task.queued", "task.start", "task.done", "task.delivered", "tool.call", "turn.end"}
+        "task.queued", "task.start", "task.done", "task.delivered", "tool.call", "turn.end",
+        "subagent.call", "subagent.done", "subagent.session_lost", "agent.error"}
 
 
 def login() -> str:
@@ -44,7 +45,7 @@ async def until_done(ws, seen):
                 seen.append(msg["kind"])
                 if msg["kind"] in SHOW:
                     data = json.dumps(msg["data"])
-                    print("    ", msg["kind"], data if FULL and msg["kind"] == "decision.call" else data[:150])
+                    print("    ", msg["kind"], data if FULL and msg["kind"] in ("decision.call", "agent.error") else data[:150])
         elif msg["type"] == "agent_done":
             print("   agent:", msg["text"] if FULL else msg["text"][:220])
             return
