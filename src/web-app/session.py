@@ -16,6 +16,7 @@ from azure.ai.voicelive.models import (
     AudioEchoCancellation,
     AudioInputTranscriptionOptions,
     AudioNoiseReduction,
+    AzureSemanticVadMultilingual,
     AzureStandardVoice,
     InputAudioFormat,
     InputTextContentPart,
@@ -35,6 +36,8 @@ logger = logging.getLogger("session")
 
 # First language is the primary one; English stays recognised because callers may switch.
 STT_LANGUAGE = os.environ.get("STT_LANGUAGE", "pt-PT,en-US")
+VAD_TYPE = os.environ.get("VAD_TYPE", "azure_semantic_vad_multilingual")
+VAD_LANGUAGES = [x.strip() for x in os.environ.get("VAD_LANGUAGES", "pt,en").split(",") if x.strip()]
 # Silent first user turn that makes the agent greet the caller; the agents recognise it and never show it.
 CALL_START = "[call connected]"
 
@@ -144,6 +147,17 @@ class VoiceBridge:
             kwargs["style"] = self.voice_style
         return AzureStandardVoice(**kwargs)
 
+    @staticmethod
+    def _turn_detection() -> Any:
+        """Barge-in is on (``interrupt_response``); blips shorter than ``speech_duration_ms`` are ignored so
+        a click or breath neither interrupts the agent nor produces an empty turn."""
+        if VAD_TYPE == "server_vad":
+            return ServerVad(threshold=0.5, prefix_padding_ms=300, silence_duration_ms=500, interrupt_response=True)
+        return AzureSemanticVadMultilingual(
+            threshold=0.5, prefix_padding_ms=300, silence_duration_ms=500, speech_duration_ms=250,
+            languages=VAD_LANGUAGES, interrupt_response=True, create_response=True,
+        )
+
     def _session_config(self) -> RequestSession:
         if self.mode == "text":
             return RequestSession(modalities=[Modality.TEXT])
@@ -153,7 +167,7 @@ class VoiceBridge:
             input_audio_format=InputAudioFormat.PCM16,
             output_audio_format=OutputAudioFormat.PCM16,
             input_audio_transcription=AudioInputTranscriptionOptions(model="azure-speech", language=STT_LANGUAGE),
-            turn_detection=ServerVad(threshold=0.5, prefix_padding_ms=300, silence_duration_ms=500),
+            turn_detection=self._turn_detection(),
             input_audio_echo_cancellation=AudioEchoCancellation(),
             input_audio_noise_reduction=AudioNoiseReduction(type="azure_deep_noise_suppression"),
         )
@@ -189,6 +203,8 @@ class VoiceBridge:
                 await conn.response.create()
             elif kind == "diag":
                 data = {k: v for k, v in msg.items() if k not in ("type", "event")}
+                if msg.get("event") != "mic.stats" or not msg.get("peak"):
+                    logger.info("mic %s %s", msg.get("event"), data)
                 await self.trace("mic", str(msg.get("event", "diag")), **data)
             elif kind == "cancel":
                 with contextlib.suppress(Exception):

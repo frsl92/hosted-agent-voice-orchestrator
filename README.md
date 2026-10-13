@@ -108,7 +108,7 @@ browser ──ws──▶ FastAPI (ACA, managed identity) ──Voice Live──
    └── trace events ◀─┴── tails the agent's console log stream (TRACE {json} lines) for that session
 ```
 
-- **Access:** a shared password (`APP_PASSWORD`, an ACA secret; default in `deploy.ps1` is `meovoicedemo`). No Entra
+- **Access:** a shared password (`APP_PASSWORD`, an ACA secret; default in `deploy.ps1` is `voicedemo`). No Entra
   sign-in. Login sets a signed, 12 h, HttpOnly cookie; five wrong attempts per minute per IP are throttled.
 - **Two experiences:** *Text* is a normal chat (Voice Live with text-only modalities: no speech models involved).
   *Voice* is speak-and-listen with an orb (listening / hearing / thinking / speaking); the transcript is shown for
@@ -132,7 +132,13 @@ browser ──ws──▶ FastAPI (ACA, managed identity) ──Voice Live──
   agent mode (`agent_config`), so the hosted agent is the brain. Input: mic PCM16 24 kHz -> backend -> Voice Live, which
   applies noise suppression, echo cancellation, server VAD and `azure-speech` speech-to-text; the transcript goes to the
   agent (Responses protocol). Output: the agent's streamed text -> Voice Live TTS (selected voice)
-  -> PCM audio -> browser. Barge-in cancels playback. Decision-1 (routing) and gpt-5.6-luna (replies) run inside the
+  -> PCM audio -> browser. Barge-in is server-side (`interrupt_response`): when the caller starts speaking Voice Live
+  cancels the response and the browser stops playback. Turn detection defaults to `azure_semantic_vad_multilingual`
+  (`VAD_TYPE=server_vad` and `VAD_LANGUAGES` override it).
+- **Microphone settings:** the header has a Mic selector and an "echo cancel" box (both remembered in the browser).
+  Browser noise suppression, AGC and echo cancellation are off by default because they can silence Bluetooth headsets
+  (peaks of exactly 0); Voice Live applies Azure deep noise suppression and echo cancellation server-side. Turn
+  "echo cancel" on when using laptop speakers. Empty VAD blips return the orb to "Listening…". Decision-1 (routing) and gpt-5.6-luna (replies) run inside the
   agent as ordinary request/response models.
 - **Visual flow:** handoff agent = animated graph (Router / Billing / Orders, token travels along each handoff, path
   breadcrumb, topics awaiting confirmation, refused handoffs flash red); background agent = phase stepper (Idle / Proposing / Running) and a task board
@@ -155,7 +161,7 @@ Run locally (uses your `az login`; needs **Azure AI User** + **Cognitive Service
 ```powershell
 cd src\web-app
 uv sync
-$env:APP_PASSWORD = 'meovoicedemo'
+$env:APP_PASSWORD = 'voicedemo'
 uv run uvicorn app:app --port 8080     # http://localhost:8080
 uv run pytest
 ```
@@ -165,7 +171,7 @@ with `AcrPull` and the two Foundry roles; builds the image in ACR; stores the pa
 
 ```powershell
 cd src\web-app
-.\deploy.ps1                          # password defaults to meovoicedemo
+.\deploy.ps1                          # password defaults to voicedemo
 .\deploy.ps1 -AppPassword '<new one>' # change the password (re-deploys the revision)
 ```
 

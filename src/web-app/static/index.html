@@ -20,6 +20,8 @@
     <div class="picker voice-only" id="voicePicker" hidden>
       <span class="label">Voice</span><select id="voiceSel" title="Voice used by Voice Live (locale forced to pt-PT)"></select>
       <span class="label">Style</span><select id="styleSel" title="Speaking style (only for voices that support it)"></select>
+      <span class="label">Mic</span><select id="micSel" title="Microphone used for the voice session"></select>
+      <label class="inline" title="Browser echo cancellation. Leave off with a headset (it can silence Bluetooth mics); Voice Live already cancels echo on the server. Turn on when using laptop speakers."><input type="checkbox" id="aecChk" /> echo cancel</label>
     </div>
     <span class="spacer"></span>
     <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">No session</span></div>
@@ -87,6 +89,7 @@
         <button class="tab" data-tab="usage">Usage <span id="usageBadge" class="badge">$0.00</span></button>
         <button class="tab" data-tab="trace">Trace</button>
         <span class="spacer"></span>
+        <button id="traceCopy" class="ghost" title="Copy the full session trace (ids, settings and all events) to the clipboard as JSON">⧉ Copy JSON</button>
         <button id="traceDownload" class="ghost" title="Download the full trace as JSON">⬇ Export</button>
       </div>
       <div id="metrics">

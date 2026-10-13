@@ -20,7 +20,7 @@ param(
   [string]$FoundryAccountName = "flopes-swc-foundry",
   [string]$FoundryProjectName = "swc-project",
   [string]$Tag = (Get-Date -Format "yyyyMMddHHmmss"),
-  [string]$AppPassword = "meovoicedemo"
+  [string]$AppPassword = "voicedemo"
 )
 
 $ErrorActionPreference = "Stop"

@@ -8,6 +8,7 @@ const state = {
   t0: null, traces: [], activeLabel: "–",
   ctx: null, micStream: null, micNode: null, micAnalyser: null, outAnalyser: null, playHead: 0, sources: new Set(),
   agentBubble: null, agentSegs: [], agentRaw: "", pendingBubble: null, waiters: [], orb: "idle", orbTimer: null, turnToken: 0, gen: 0,
+  mic: { deviceId: "", aec: false },
 };
 
 // ------------------------------------------------------------------ setup
@@ -24,7 +25,7 @@ async function init() {
   renderSeg("agentSeg", state.config.agents, () => state.agent, (id) => { state.agent = id; changed(); });
   renderSeg("modeSeg", state.config.modes, () => state.mode, (id) => { state.mode = id; changed(); });
   initVoicePicker();
-  renderSamples();
+  initMicPicker();
 
   $("startBtn").onclick = startSession;
   $("stopBtn").onclick = () => stopSession();
@@ -36,6 +37,7 @@ async function init() {
   $("scriptAll").onclick = scriptAll;
   $("scriptClose").onclick = () => { state.sample = null; $("script").hidden = true; renderSamples(); };
   $("traceDownload").onclick = downloadTrace;
+  $("traceCopy").onclick = copyTrace;
   document.querySelectorAll("#filters input[data-src]").forEach((cb) => (cb.onchange = renderTrace));
   document.querySelectorAll(".tab").forEach((t) => (t.onclick = () => selectTab(t.dataset.tab)));
   window.addEventListener("beforeunload", () => { if (state.ws) state.ws.close(); });
@@ -109,6 +111,36 @@ function renderStyles() {
 function voicePicked() {
   localStorage.setItem("voicePick", JSON.stringify({ voice: state.voice, style: state.style }));
   if (state.mode === "voice") resetConversation();
+}
+
+// Microphone choice and browser echo cancellation, remembered in this browser; applied when a session starts.
+function initMicPicker() {
+  Object.assign(state.mic, JSON.parse(localStorage.getItem("micPick") || "{}"));
+  $("aecChk").checked = !!state.mic.aec;
+  $("aecChk").onchange = () => { state.mic.aec = $("aecChk").checked; saveMic(); };
+  $("micSel").onchange = () => { state.mic.deviceId = $("micSel").value; saveMic(); };
+  if (navigator.mediaDevices) navigator.mediaDevices.addEventListener("devicechange", refreshMics);
+  refreshMics();
+}
+
+const saveMic = () => localStorage.setItem("micPick", JSON.stringify(state.mic));
+
+async function refreshMics() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+  const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
+  const sel = $("micSel");
+  sel.innerHTML = "";
+  const def = document.createElement("option");
+  def.value = ""; def.textContent = "System default";
+  sel.appendChild(def);
+  devices.forEach((d, i) => {
+    if (d.deviceId === "default" || d.deviceId === "communications") return;
+    const o = document.createElement("option");
+    o.value = d.deviceId; o.textContent = d.label || `Microphone ${i + 1}`;
+    sel.appendChild(o);
+  });
+  if (![...sel.options].some((o) => o.value === state.mic.deviceId)) state.mic.deviceId = "";
+  sel.value = state.mic.deviceId;
 }
 
 function changed() {
@@ -401,7 +433,10 @@ function onMessage(m) {
       break;
     case "user_text":
     case "user_transcript":
-      if (m.type === "user_transcript" && !m.text.trim()) break; // VAD blip that STT could not transcribe
+      if (m.type === "user_transcript" && !m.text.trim()) { // VAD blip that STT could not transcribe
+        if (!state.responding && state.callActive) setOrb("listening", "Listening…");
+        break;
+      }
       addBubble("user", "You", m.text);
       if (m.type === "user_transcript") {
         advanceScript();
@@ -527,12 +562,24 @@ function addBubble(cls, who, text) {
 async function openMic(gen) {
   await ensureAudio();
   const q = new URLSearchParams(location.search);
-  // Browser noise suppression/AGC gated and clipped Bluetooth headset audio; Voice Live already applies
-  // Azure deep noise suppression and echo cancellation, so only AEC stays on. Override with ?ns=1&agc=1&aec=0.
+  // Browser processing is off by default: noise suppression/AGC gated and clipped Bluetooth headset audio, and
+  // browser echo cancellation can mute a Bluetooth mic completely. Voice Live applies Azure deep noise
+  // suppression and echo cancellation on the server. The "echo cancel" box (or ?aec=1&ns=1&agc=1) overrides.
   const flag = (k, def) => (q.has(k) ? q.get(k) !== "0" : def);
-  state.micStream = await navigator.mediaDevices.getUserMedia({
-    audio: { channelCount: 1, echoCancellation: flag("aec", true), noiseSuppression: flag("ns", false), autoGainControl: flag("agc", false) },
-  });
+  const audio = {
+    channelCount: 1, echoCancellation: flag("aec", state.mic.aec), noiseSuppression: flag("ns", false), autoGainControl: flag("agc", false),
+  };
+  try {
+    state.micStream = await navigator.mediaDevices.getUserMedia({
+      audio: state.mic.deviceId ? { ...audio, deviceId: { exact: state.mic.deviceId } } : audio,
+    });
+  } catch (err) {
+    if (!state.mic.deviceId || err.name !== "OverconstrainedError") throw err;
+    note("The selected microphone is not available — using the system default.");
+    state.mic.deviceId = "";
+    state.micStream = await navigator.mediaDevices.getUserMedia({ audio });
+  }
+  refreshMics();
   if (gen !== state.gen) { stopMic(); return; }
   await ensureSession();
   if (gen !== state.gen) return;
@@ -541,6 +588,14 @@ async function openMic(gen) {
     event: "mic.start", label: track && track.label, ctxRate: state.ctx.sampleRate,
     settings: track && track.getSettings ? track.getSettings() : null,
   });
+  if (track) {
+    track.onmute = () => { sendDiag({ event: "mic.track", state: "muted" }); note("The microphone stopped delivering audio (device busy or switching profile)."); };
+    track.onunmute = () => sendDiag({ event: "mic.track", state: "unmuted" });
+    track.onended = () => {
+      sendDiag({ event: "mic.track", state: "ended" });
+      if (gen === state.gen && state.callActive) note("The microphone was disconnected. Stop the session, pick the mic in the header and start again.");
+    };
+  }
   const src = state.ctx.createMediaStreamSource(state.micStream);
   state.micNode = new AudioWorkletNode(state.ctx, "mic-processor");
   let lastMsg = 0, maxGap = 0, frames = 0, quiet = 0;
@@ -551,7 +606,7 @@ async function openMic(gen) {
         buffered: state.ws ? state.ws.bufferedAmount : null, muted: state.muted });
       frames = 0; maxGap = 0;
       quiet = isReady() && s.peak < 0.01 && !state.muted ? quiet + 1 : 0;
-      if (quiet === 4) note("The microphone seems silent — check the browser's selected input device and permissions.");
+      if (quiet === 4) note("The microphone seems silent — pick another microphone in the header (Bluetooth headsets often deliver silence), or toggle \"echo cancel\", then restart the session.");
       return;
     }
     const now = performance.now();
@@ -673,7 +728,14 @@ function addTrace(ev) {
 function voiceOrbFromTrace(ev) {
   if (state.mode !== "voice" || !state.callActive || ev.source !== "voice") return;
   if (ev.kind === "speech.started") { setOrb("hearing", "Hearing you…"); state.turnToken++; }
-  else if (ev.kind === "speech.stopped") setOrb("thinking", "Thinking…");
+  else if (ev.kind === "speech.stopped") {
+    setOrb("thinking", "Thinking…");
+    // If nothing was understood no response follows; do not stay on "Thinking" forever.
+    const token = ++state.turnToken;
+    state.orbTimer = setTimeout(() => {
+      if (token === state.turnToken && !state.responding && state.callActive && state.orb === "thinking") setOrb("listening", "Listening…");
+    }, 6000);
+  }
 }
 
 function updateMetrics(ev) {
@@ -765,13 +827,48 @@ function renderTrace() {
   for (const ev of state.traces) if (allowed.has(ev.source)) appendRow(ev);
 }
 
+// Everything needed to debug a session: ids (to find it in Foundry / ACA logs), settings and every trace event.
+function buildTraceExport() {
+  const created = state.traces.find((e) => e.kind === "session.created");
+  const cd = (created && created.data) || {};
+  return {
+    exportedAt: new Date().toISOString(),
+    agent: state.agent,
+    mode: state.mode,
+    session_id: cd.session_id || null,
+    agent_session_id: cd.agent_session_id || null,
+    voice: state.mode === "voice" ? { voice: state.voice, style: state.style, mic: state.mic } : undefined,
+    events: state.traces,
+  };
+}
+
 function downloadTrace() {
-  const blob = new Blob([JSON.stringify({ agent: state.agent, mode: state.mode, events: state.traces }, null, 2)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify(buildTraceExport(), null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `trace-${state.agent}-${state.mode}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+async function copyTrace() {
+  const btn = $("traceCopy");
+  const text = JSON.stringify(buildTraceExport(), null, 2);
+  let ok = true;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (_) {
+    const ta = document.createElement("textarea"); // clipboard API unavailable (non-secure context / permissions)
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand("copy"); } catch (_e) { ok = false; }
+    ta.remove();
+  }
+  const label = btn.dataset.label || btn.textContent;
+  btn.dataset.label = label;
+  btn.textContent = ok ? `✓ Copied ${state.traces.length} events` : "✗ Copy failed";
+  clearTimeout(btn._t);
+  btn._t = setTimeout(() => (btn.textContent = label), 2000);
 }
 
 init();
