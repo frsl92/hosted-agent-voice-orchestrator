@@ -106,7 +106,9 @@ DIRECTIVE_CORRECTION = (
 )
 DIRECTIVE_CONFIRMED = (
     "The customer has just confirmed that you should look into {topic}. Start with a very short natural line saying "
-    "you will check it now, then use your tools and explain the result in detail, in two or three sentences. Cover "
+    "you will check it now, then use your tools and explain the result in detail, in two or three sentences. Say the "
+    "opening line only once, before the tools; after the tool result go straight to the answer without announcing "
+    "the lookup again. Cover "
     "only {topic}: other topics the customer raised are handled afterwards by a colleague, so do not mention them or "
     "say you cannot help with them. If you lack a detail such as the order number, ask for it instead. When the "
     "result has been given, call return_to_router."
@@ -118,8 +120,9 @@ DIRECTIVE_NOTED_OTHER = (
 DIRECTIVE_BRIDGE = (
     "You are taking over for a topic the customer already confirmed ({topic}). Start with a short bridging line such "
     'as "{bridge}" (said in the customer\'s language), then use your tools and explain the result in detail, in two '
-    "or three sentences, using the conversation so far. If you lack a detail, ask for it instead. When the result "
-    "has been given, call return_to_router."
+    "or three sentences, using the conversation so far. Say the bridging line only once, before the tools; after the "
+    "tool result go straight to the answer without repeating the bridge or announcing the lookup again. If you lack "
+    "a detail, ask for it instead. When the result has been given, call return_to_router."
 )
 
 TOPIC_LABEL = {"billing": "billing", "order_status": "order status"}
