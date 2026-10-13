@@ -236,6 +236,7 @@ const Viz = (() => {
     const lines = String(state || "").split("\n").filter(Boolean);
     let last = -1; lines.forEach((l, i) => { if (/^customer:/i.test(l)) last = i; });
     return `<div class="tx">${lines.map((l, i) => {
+      if (l.startsWith("---")) return `<div class="tx-sep">${esc(l.replace(/^-+\s*/, "").replace(/\s*-+$/, ""))}</div>`;
       const c = /^customer:/i.test(l);
       return `<div class="${c ? "c" : "a"}${i === last ? " latest" : ""}">${esc(l)}</div>`;
     }).join("")}</div>`;

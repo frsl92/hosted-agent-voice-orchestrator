@@ -48,10 +48,22 @@ def resource_endpoint(project_endpoint: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
-def format_transcript(turns: list[tuple[str, str]], limit: int = 8) -> str:
-    """Render ``(role, text)`` turns as a plain transcript for Decision-1."""
+LATEST_MARKER = "--- LATEST CUSTOMER MESSAGE: answer every question from this message alone; earlier turns are only context ---"
+
+
+def format_transcript(turns: list[tuple[str, str]], limit: int = 6) -> str:
+    """Render ``(role, text)`` turns as a plain transcript for Decision-1.
+
+    Earlier turns are kept as context, but a marker line sets the latest customer message apart so topic
+    questions are judged on it and not on what was discussed (and already handled) earlier in the call.
+    """
     label = {"user": "Customer", "assistant": "Agent"}
-    return "\n".join(f"{label.get(r, r)}: {t}" for r, t in turns[-limit:] if t)
+    recent = [(r, t) for r, t in turns[-limit:] if t]
+    lines = [f"{label.get(r, r)}: {t}" for r, t in recent]
+    last = max((i for i, (r, _) in enumerate(recent) if r == "user"), default=0)
+    if last == 0:
+        return "\n".join(lines)
+    return "\n".join([*lines[:last], LATEST_MARKER, *lines[last:]])
 
 
 @dataclass
@@ -141,15 +153,15 @@ class DecisionClient:
         questions = {
             "billing": {
                 "type": "noul",
-                "instructions": "Is the customer asking about their bill, charges, invoices, balance or payments?",
+                "instructions": "In the customer's latest message, is the customer asking about their bill, charges, invoices, balance or payments?",
             },
             "order_status": {
                 "type": "noul",
-                "instructions": "Is the customer asking about the status, tracking or delivery of an order?",
+                "instructions": "In the customer's latest message, is the customer asking about the status, tracking or delivery of an order?",
             },
             "primary_topic": {
                 "type": "choice",
-                "instructions": "Which topic did the customer raise first in their latest message?",
+                "instructions": "Which topic does the customer's latest message raise first? Ignore topics from earlier turns that the latest message does not mention.",
                 "criteria": {
                     TOPIC_BILLING: "bill, charges, invoice, balance or payment",
                     TOPIC_ORDERS: "order status, tracking or delivery",
@@ -159,7 +171,7 @@ class DecisionClient:
             },
             "wants_to_end": {
                 "type": "noul",
-                "instructions": "Does the customer say they have nothing else and want to end the call?",
+                "instructions": "Does the customer's latest message say they have nothing else and want to end the call?",
             },
         }
         try:

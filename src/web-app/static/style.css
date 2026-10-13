@@ -157,6 +157,7 @@ label.inline { display: inline-flex; align-items: center; gap: 6px; color: var(-
 .tx div { padding: 4px 8px; border-radius: 8px; font-size: 12px; max-width: 95%; background: #11161d; }
 .tx .c { align-self: flex-end; background: #17314f; } .tx .a { align-self: flex-start; }
 .tx .latest { outline: 1px solid var(--accent); }
+.tx .tx-sep { align-self: stretch; max-width: 100%; text-align: center; background: transparent; color: var(--accent); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; border-top: 1px dashed var(--line); border-radius: 0; }
 .q { margin-bottom: 8px; font-size: 12px; } .q .qn { font-weight: 700; } .q .qt { margin-left: 6px; }
 .q .qi { color: #c5d0dc; display: block; } .q ul { margin: 2px 0 0; padding-left: 16px; color: var(--muted); }
 .ans { margin-bottom: 12px; font-size: 12px; } .ans .an { font-weight: 700; display: flex; align-items: baseline; gap: 8px; }
