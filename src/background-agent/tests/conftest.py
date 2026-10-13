@@ -61,7 +61,7 @@ class Runner:
         self.started: list[tuple[str, dict[str, Any]]] = []
         self.gate: asyncio.Event | None = None
 
-    async def __call__(self, topic: str, params: dict[str, Any]) -> str:
+    async def __call__(self, topic: str, params: dict[str, Any], session_key: str = "") -> str:
         self.started.append((topic, dict(params)))
         if self.gate:
             await self.gate.wait()

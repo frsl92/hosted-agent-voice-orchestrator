@@ -86,20 +86,23 @@ Notes:
 - Smoke test: `azd ai agent invoke handoff-agent "I have a question about my bill"` (consecutive calls share a session;
   `--new-session` resets). Logs: `azd ai agent monitor <service> --type console`.
 
-## Remote sub-agents (handoff-agent)
+## Remote sub-agents (both orchestrators)
 
 `SUBAGENT_MODE=remote` (the deployed default) moves the billing and orders specialists out of the orchestrator
-container into **their own Foundry Hosted Agents** ([`billing-agent`](src/billing-agent), [`orders-agent`](src/orders-agent)),
+containers into **their own Foundry Hosted Agents** ([`billing-agent`](src/billing-agent), [`orders-agent`](src/orders-agent)),
 each exposing the Responses API. `SUBAGENT_MODE=local` keeps the original in-process sub-agents.
 
 ```mermaid
 flowchart LR
   VL[Voice Live / web app] --> H[handoff-agent<br/>router + Decision-1]
+  VL --> G[background-agent<br/>foreground + Decision-1]
   H -- Responses API<br/>agent_session_id --> B[billing-agent]
   H -- Responses API<br/>agent_session_id --> O[orders-agent]
+  G -- Responses API<br/>agent_session_id --> B
+  G -- Responses API<br/>agent_session_id --> O
 ```
 
-- The router still owns routing, confirmation and the hand-back; only the specialist's turn runs remotely
+- In `handoff-agent` the router still owns routing, confirmation and the hand-back; only the specialist's turn runs remotely
   (`src/handoff-agent/remote_runner.py`, through `AIProjectClient.get_openai_client(agent_name=...)`).
 - **Sessions** ([manage hosted sessions](https://learn.microsoft.com/azure/foundry/agents/how-to/manage-hosted-sessions)):
   the first call to a sub-agent has no `agent_session_id`, so Foundry creates one; its id is read from the response and kept
@@ -116,8 +119,12 @@ flowchart LR
   the Foundry session). `SUBAGENT_USER_DELEGATION=true` optionally sends `x-ms-user-identity`; it needs a custom role with
   the `.../agents/endpoints/UserIdentityImpersonation/action` data action, and in testing it did **not** make the platform
   supply a user ID to the sub-agent, so it is off by default.
-- Deploy order: `azd deploy billing-agent orders-agent handoff-agent --no-prompt`.
-- The `background-agent` still runs its workers in-process.
+- Deploy order: `azd deploy billing-agent orders-agent handoff-agent background-agent --no-prompt`.
+- **`background-agent` uses the same two hosted agents** (`src/background-agent/remote_workers.py`, same
+  `SUBAGENT_MODE` / `BILLING_AGENT_NAME` / `ORDERS_AGENT_NAME` settings). Each background task is one non-streaming
+  Responses call with a "silent background lookup" instruction; the session is kept per (conversation, topic), so a second
+  order lookup reuses the first session. Tasks of one topic in a conversation run one at a time because they share a session.
+  Its instance identity also needs **Foundry User** on the project. `SUBAGENT_MODE=local` keeps the in-process workers.
 
 ## Talk to it with Voice Live
 

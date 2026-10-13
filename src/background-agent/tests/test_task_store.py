@@ -6,7 +6,7 @@ from decision import TOPIC_BILLING, TOPIC_ORDERS
 from task_store import TaskStatus, TaskStore
 
 
-async def fast(topic, params):
+async def fast(topic, params, key):
     return f"done-{topic}"
 
 
@@ -25,7 +25,7 @@ async def test_launch_and_collect_exactly_once():
 async def test_duplicate_guard_returns_existing_active_task():
     gate = asyncio.Event()
 
-    async def slow(topic, params):
+    async def slow(topic, params, key):
         await gate.wait()
         return "x"
 
@@ -42,7 +42,7 @@ async def test_duplicate_guard_returns_existing_active_task():
 
 
 async def test_failure_is_captured_and_delivered_once():
-    async def boom(topic, params):
+    async def boom(topic, params, key):
         raise RuntimeError("nope")
 
     store = TaskStore(boom)
@@ -56,7 +56,7 @@ async def test_failure_is_captured_and_delivered_once():
 async def test_cancel_stops_worker_and_is_never_delivered():
     gate = asyncio.Event()
 
-    async def slow(topic, params):
+    async def slow(topic, params, key):
         await gate.wait()
 
     store = TaskStore(slow)

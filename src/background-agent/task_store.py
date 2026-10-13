@@ -16,7 +16,7 @@ from calltrace import elapsed_ms, emit
 
 logger = logging.getLogger(__name__)
 
-# (topic, params) -> speakable summary
+# (topic, params, session_key) -> speakable summary
 WorkerRunner = Callable[[str, dict[str, Any]], Awaitable[str]]
 
 
@@ -87,7 +87,7 @@ class TaskStore:
         started = time.perf_counter()
         emit("task.start", task_id=task.id, topic=task.topic, params=task.params)
         try:
-            task.result = (await self._runner(task.topic, task.params)).strip()
+            task.result = (await self._runner(task.topic, task.params, task.session_key)).strip()
             task.status = TaskStatus.COMPLETED
             emit("task.done", task_id=task.id, topic=task.topic, result=task.result, ms=elapsed_ms(started))
         except asyncio.CancelledError:

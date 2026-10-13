@@ -7,6 +7,7 @@ dependencies = [
     "agent-framework-foundry",
     "agent-framework-foundry-hosting>=1.0.0b260813",
     "azure-identity",
+    "azure-ai-projects>=2.3.0",
     "httpx",
     "python-dotenv",
     "debugpy",

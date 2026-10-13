@@ -20,7 +20,7 @@ def build_worker_runner(client: Any) -> WorkerRunner:
     """Return ``async (topic, params) -> speakable summary`` backed by per-topic agents."""
     agents: dict[str, Agent] = {}
 
-    async def run(topic: str, params: dict[str, Any]) -> str:
+    async def run(topic: str, params: dict[str, Any], session_key: str = "") -> str:
         if topic == TOPIC_BILLING:
             agent = agents.setdefault(topic, build_billing_worker(client))
             prompt = billing_prompt(params)

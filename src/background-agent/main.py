@@ -33,7 +33,13 @@ def build_foreground() -> Foreground:
         model=os.environ["AZURE_AI_MODEL_DEPLOYMENT_NAME"],
         credential=DefaultAzureCredential(),
     )
-    return Foreground(DecisionClient(), FoundryForegroundLLM(client), TaskStore(build_worker_runner(client)))
+    if os.environ.get("SUBAGENT_MODE", "remote").lower() == "remote":
+        from remote_workers import RemoteWorkerRunner, agent_names_from_env, build_openai_for
+
+        runner = RemoteWorkerRunner(build_openai_for(os.environ["FOUNDRY_PROJECT_ENDPOINT"]), agent_names_from_env())
+    else:
+        runner = build_worker_runner(client)
+    return Foreground(DecisionClient(), FoundryForegroundLLM(client), TaskStore(runner))
 
 
 class BackgroundCallCenterAgent:
