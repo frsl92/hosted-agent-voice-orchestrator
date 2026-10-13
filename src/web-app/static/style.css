@@ -42,6 +42,10 @@ button.big { padding: 10px 20px; border-radius: 24px; font-size: 15px; }
 button.on { background: var(--warn); border-color: var(--warn); color: #1a1200; }
 input[type=text], input[type=number], #textInput { flex: 1; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }
 label.inline { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.info { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border: 1px solid var(--muted); border-radius: 50%; color: var(--muted); font-size: 11px; font-weight: 700; cursor: help; flex: none; }
+.info:hover, .info:focus { color: var(--text); border-color: var(--text); outline: none; }
+.info .tip { display: none; position: absolute; top: 24px; right: 0; width: 280px; padding: 8px 10px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.4); font-size: 12px; font-weight: 400; line-height: 1.4; text-align: left; z-index: 50; }
+.info:hover .tip, .info:focus .tip { display: block; }
 
 .info { font-size: 13px; color: #c5d0dc; } .info b { display: block; font-size: 15px; color: var(--text); } .info .tag { color: var(--muted); display: block; margin-bottom: 6px; }
 .card { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-top: 8px; background: var(--panel); cursor: pointer; }

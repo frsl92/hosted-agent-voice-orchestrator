@@ -26,6 +26,7 @@ async function init() {
   renderSeg("modeSeg", state.config.modes, () => state.mode, (id) => { state.mode = id; changed(); });
   initVoicePicker();
   initMicPicker();
+  renderSamples();
 
   $("startBtn").onclick = startSession;
   $("stopBtn").onclick = () => stopSession();

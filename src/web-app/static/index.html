@@ -21,7 +21,8 @@
       <span class="label">Voice</span><select id="voiceSel" title="Voice used by Voice Live (locale forced to pt-PT)"></select>
       <span class="label">Style</span><select id="styleSel" title="Speaking style (only for voices that support it)"></select>
       <span class="label">Mic</span><select id="micSel" title="Microphone used for the voice session"></select>
-      <label class="inline" title="Browser echo cancellation. Leave off with a headset (it can silence Bluetooth mics); Voice Live already cancels echo on the server. Turn on when using laptop speakers."><input type="checkbox" id="aecChk" /> echo cancel</label>
+      <label class="inline"><input type="checkbox" id="aecChk" /> echo cancel</label>
+      <span class="info" tabindex="0" aria-label="About echo cancel">!<span class="tip">Browser echo cancellation. Leave it off with a headset (it can silence Bluetooth mics); Voice Live already cancels echo on the server. Turn it on when using laptop speakers.</span></span>
     </div>
     <span class="spacer"></span>
     <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">No session</span></div>
