@@ -7,6 +7,7 @@ globals), so it can be persisted by the host between ``/responses`` calls.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -34,11 +35,16 @@ ORDERS = "orders"
 AGENT_FOR_TOPIC = {TOPIC_BILLING: BILLING, TOPIC_ORDERS: ORDERS}
 TOPIC_FOR_AGENT = {v: k for k, v in AGENT_FOR_TOPIC.items()}
 
+IDLE, PROPOSING = "idle", "proposing"
 OTHER_TOPIC_THRESHOLD = 0.6
 RESOLVED_THRESHOLD = 0.7
 MAX_HISTORY = 30
 MAX_HANDOFFS_PER_CALL = 30
 MAX_HANDOFFS_PER_TURN = 1
+MAX_REASKS = 2
+# Blank line between agents: the web app shows each agent's answer as its own message. It goes *after* a
+# segment so the text-to-speech engine sees the sentence end immediately.
+SEGMENT_BREAK = "\n\n"
 
 FALLBACK_REPLY = "fallback"
 EMPTY_INPUT_REPLY = "empty_input"
@@ -69,6 +75,9 @@ def new_state() -> dict[str, Any]:
         "ended": False,
         "pending_return": False,
         "handoff_count": 0,
+        "phase": IDLE,
+        "proposed": [],
+        "reasks": 0,
         "lang": lang.DEFAULT,
     }
 
@@ -90,6 +99,10 @@ class _Plan:
 class _Turn:
     handoffs: int = 0
     origin: str = ROUTER
+    # A confirmed request runs every topic in one turn, so it gets a bigger budget and may return to the router.
+    max_handoffs: int = MAX_HANDOFFS_PER_TURN
+    # Set once the customer confirmed: each topic's answer is followed by the next one without waiting for the customer.
+    run_queue: bool = False
     parts: list[str] = field(default_factory=list)
 
 
@@ -140,9 +153,17 @@ class Orchestrator:
             if plan.ends_call:
                 state["ended"] = True
             plan = None
-            if signals.return_requested and state["active_agent"] != ROUTER and not state["ended"]:
+            # After a confirmed plan the sequence continues even if the model forgot to call return_to_router,
+            # unless the agent is waiting for a detail from the customer.
+            asked = "".join(turn.parts).rstrip().endswith("?")
+            returned = signals.return_requested or (turn.run_queue and not asked)
+            if returned and state["active_agent"] != ROUTER and not state["ended"]:
                 plan = self._after_return(state, turn)
                 signals = TurnSignals()
+                if plan is not None and turn.parts:
+                    # Each agent's answer is its own message (and its own breath in the voice).
+                    turn.parts.append(SEGMENT_BREAK)
+                    yield SEGMENT_BREAK
 
         state["greeted"] = True
         reply = "".join(turn.parts).strip()
@@ -182,7 +203,7 @@ class Orchestrator:
     def _handoff(self, state: dict[str, Any], turn: _Turn, target: str) -> bool:
         """Switch the active agent; refuses repeated/bouncing handoffs. Returns True if switched."""
         if (
-            turn.handoffs >= MAX_HANDOFFS_PER_TURN
+            turn.handoffs >= turn.max_handoffs
             or target == state["active_agent"]
             or target == turn.origin
             or state["handoff_count"] >= MAX_HANDOFFS_PER_CALL
@@ -199,11 +220,16 @@ class Orchestrator:
 
     async def _plan(self, state: dict[str, Any], turn: _Turn) -> _Plan:
         if state["active_agent"] == ROUTER:
+            if state["phase"] == PROPOSING and state["proposed"]:
+                return await self._plan_confirmation(state, turn)
             return await self._plan_router(state, turn)
         return await self._plan_sub(state, turn)
 
-    async def _plan_router(self, state: dict[str, Any], turn: _Turn) -> _Plan:
-        analysis = await self._decision.analyze_turn(self._transcript(state))
+    async def _plan_router(
+        self, state: dict[str, Any], turn: _Turn, analysis: Any = None, correction: bool = False
+    ) -> _Plan:
+        if analysis is None:
+            analysis = await self._decision.analyze_turn(self._transcript(state))
         topics = list(analysis.detected_topics) if analysis.ok else []
         logger.info(
             "Analysis: billing=%.2f orders=%.2f primary=%s end=%.2f ok=%s",
@@ -219,16 +245,7 @@ class Orchestrator:
             return _Plan(ROUTER, P.DIRECTIVE_GOODBYE, ends_call=True)
 
         if topics:
-            first, rest = topics[0], topics[1:]
-            state["queue"] = [t for t in state["queue"] if t != first]
-            for t in rest:
-                if t not in state["queue"]:
-                    state["queue"].append(t)
-            if self._handoff(state, turn, AGENT_FOR_TOPIC[first]):
-                directive = P.DIRECTIVE_HANDOFF_FIRST
-                if rest:
-                    directive = P.DIRECTIVE_ALSO_RAISED.format(other=_label(rest[0])) + " " + directive
-                return _Plan(AGENT_FOR_TOPIC[first], directive)
+            return self._propose(state, topics)
 
         if (
             analysis.ok
@@ -236,9 +253,64 @@ class Orchestrator:
             and analysis.primary_confidence >= CHOICE_CONFIDENCE_THRESHOLD
         ):
             return _Plan(ROUTER, P.DIRECTIVE_OUT_OF_SCOPE)
+        if correction:
+            return _Plan(ROUTER, P.DIRECTIVE_CORRECTION)
         if not state["greeted"]:
             return _Plan(ROUTER, P.DIRECTIVE_GREET_REPLY)
         return _Plan(ROUTER, P.DIRECTIVE_CLARIFY)
+
+    def _propose(self, state: dict[str, Any], topics: list[str]) -> _Plan:
+        """Do not hand off yet: tell the customer what was understood and ask them to confirm."""
+        state["proposed"] = list(topics)
+        state["phase"] = PROPOSING
+        state["reasks"] = 0
+        state["queue"] = []
+        emit("phase", phase=PROPOSING, proposed=[{"topic": t} for t in topics])
+        return _Plan(ROUTER, P.DIRECTIVE_CONFIRM.format(topics=" and ".join(_label(t) for t in topics)))
+
+    def _reset_proposal(self, state: dict[str, Any]) -> None:
+        state["proposed"] = []
+        state["phase"] = IDLE
+        state["reasks"] = 0
+
+    async def _plan_confirmation(self, state: dict[str, Any], turn: _Turn) -> _Plan:
+        transcript = self._transcript(state)
+        # Analysed in parallel so "ok, never mind, that's all" is not mistaken for a "yes".
+        verdict, analysis = await asyncio.gather(
+            self._decision.confirmation(transcript), self._decision.analyze_turn(transcript)
+        )
+        if verdict == "yes" and analysis.ok and analysis.confident_end:
+            verdict = "no"
+        proposed = [t for t in state["proposed"] if t in TOPICS]
+        emit(
+            "decision.confirmation", verdict=verdict, wants_to_end=analysis.wants_to_end,
+            proposed=[{"topic": t} for t in proposed],
+        )
+
+        if verdict == "yes" and proposed:
+            self._reset_proposal(state)
+            first, rest = proposed[0], proposed[1:]
+            state["queue"] = list(rest)
+            emit("phase", phase=IDLE, confirmed=[{"topic": t} for t in proposed])
+            # One handoff per confirmed topic plus the final return to the router.
+            turn.origin = ""
+            turn.max_handoffs = len(proposed) + 1
+            turn.run_queue = True
+            if self._handoff(state, turn, AGENT_FOR_TOPIC[first]):
+                return _Plan(AGENT_FOR_TOPIC[first], P.DIRECTIVE_CONFIRMED.format(topic=_label(first)))
+            return _Plan(ROUTER, P.DIRECTIVE_CLARIFY)
+
+        if verdict == "neither" and proposed:
+            state["reasks"] += 1
+            if state["reasks"] <= MAX_REASKS:
+                return _Plan(ROUTER, P.DIRECTIVE_REASK.format(topics=" and ".join(_label(t) for t in proposed)))
+            self._reset_proposal(state)
+            emit("phase", phase=IDLE, proposed=[])
+            return _Plan(ROUTER, P.DIRECTIVE_OPEN_QUESTION)
+
+        self._reset_proposal(state)
+        emit("phase", phase=IDLE, proposed=[])
+        return await self._plan_router(state, turn, analysis=analysis, correction=True)
 
     async def _plan_sub(self, state: dict[str, Any], turn: _Turn) -> _Plan:
         active = state["active_agent"]
@@ -302,7 +374,7 @@ class Orchestrator:
 
     def _after_return(self, state: dict[str, Any], turn: _Turn) -> _Plan | None:
         """The sub-agent called ``return_to_router`` after answering."""
-        if turn.handoffs >= MAX_HANDOFFS_PER_TURN:
+        if turn.handoffs >= turn.max_handoffs:
             state["pending_return"] = True
             return None
         queued = self._next_queued(state, turn)
@@ -321,7 +393,7 @@ class Orchestrator:
         history = [dict(m) for m in state["history"]]
         if turn.parts:
             history.append({"role": "assistant", "text": "".join(turn.parts).strip()})
-        needs_separator = bool(turn.parts)
+        needs_separator = bool(turn.parts) and not turn.parts[-1][-1:].isspace()
         produced = False
         started = time.perf_counter()
         first_token_ms: int | None = None

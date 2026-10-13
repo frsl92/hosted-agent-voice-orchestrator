@@ -22,8 +22,7 @@
       <span class="label">Style</span><select id="styleSel" title="Speaking style (only for voices that support it)"></select>
     </div>
     <span class="spacer"></span>
-    <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">No conversation yet</span></div>
-    <button id="newBtn" class="primary" title="Close the current session and start a clean one">＋ New conversation</button>
+    <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">No session</span></div>
     <button id="logoutBtn" class="ghost" title="Sign out">Sign out</button>
   </header>
 
@@ -35,12 +34,19 @@
       </section>
       <section>
         <h2>Sample conversations</h2>
-        <small class="hint">Same scripts for every agent. Pick one to load it.</small>
+        <small class="hint">Same scripts for every agent. Picking one only loads it — start a session to use it.</small>
         <div id="samples"></div>
       </section>
     </aside>
 
     <section id="center">
+      <div id="sessionBar" class="sessionbar stopped">
+        <span class="spinner"></span>
+        <div class="sb-text"><b id="sbTitle">No active session</b><div id="sbMsg" class="hint"></div></div>
+        <button id="startBtn" class="primary big">▶ Start session</button>
+        <button id="stopBtn" class="big danger" hidden>■ Stop session</button>
+      </div>
+
       <div id="script" hidden>
         <div class="script-head">
           <strong id="scriptTitle"></strong>
@@ -54,10 +60,10 @@
       </div>
 
       <div id="textView" class="view">
-        <div id="chat" class="chat"><div class="empty">Type a message below, or load a sample conversation from the left.</div></div>
+        <div id="chat" class="chat"></div>
         <form id="composer" autocomplete="off">
-          <input id="textInput" placeholder="Type a message…" />
-          <button id="sendBtn" class="primary">Send</button>
+          <input id="textInput" placeholder="Start a session to chat" disabled />
+          <button id="sendBtn" class="primary" disabled>Send</button>
           <button type="button" id="cancelBtn" title="Stop the agent's current answer" disabled>■</button>
         </form>
       </div>
@@ -65,14 +71,12 @@
       <div id="voiceView" class="view" hidden>
         <div class="stage">
           <div id="orb" class="orb idle"><div class="ring r1"></div><div class="ring r2"></div><div class="core">🎙</div></div>
-          <div id="orbLabel" class="orb-label">Press <b>Start call</b> and speak</div>
+          <div id="orbLabel" class="orb-label">Press <b>Start session</b> to begin</div>
           <div class="call-controls">
-            <button id="callBtn" class="primary big">📞 Start call</button>
             <button id="muteBtn" class="big" hidden>🎤 Mute</button>
-            <button id="hangBtn" class="big danger" hidden>⏹ End call</button>
           </div>
         </div>
-        <div id="captions" class="chat captions"><div class="empty">Captions appear here as you talk. They are for reference only — the conversation is voice.</div></div>
+        <div id="captions" class="chat captions"></div>
       </div>
     </section>
 

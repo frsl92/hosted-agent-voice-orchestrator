@@ -82,6 +82,14 @@ label.inline { display: inline-flex; align-items: center; gap: 6px; color: var(-
 .call-controls { display: flex; gap: 12px; }
 .captions { border-top: 1px solid var(--line); margin-top: 6px; }
 
+.sessionbar { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--line); border-left: 4px solid var(--line); background: var(--panel); }
+.sessionbar .sb-text { flex: 1; min-width: 0; } .sessionbar .sb-text b { display: block; }
+.sessionbar.starting { border-left-color: var(--warn); background: #2a2410; }
+.sessionbar.ready { border-left-color: var(--good); background: #10261a; }
+.sessionbar .spinner { display: none; width: 18px; height: 18px; border: 2px solid var(--warn); border-top-color: transparent; border-radius: 50%; animation: spin .9s linear infinite; }
+.sessionbar.starting .spinner { display: block; }
+#textInput:disabled { opacity: .5; cursor: not-allowed; }
+
 .tabs { display: flex; align-items: center; gap: 2px; padding: 8px 10px 0; border-bottom: 1px solid var(--line); }
 .tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); padding: 8px 11px; }
 .tab.active { color: var(--text); border-bottom-color: var(--accent); }

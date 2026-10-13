@@ -7,9 +7,9 @@ Authentication is **Entra ID only** (`DefaultAzureCredential`); no keys.
 
 | | [`handoff-agent`](src/handoff-agent) | [`background-agent`](src/background-agent) |
 |---|---|---|
-| Who talks to the customer | A router greets, then the **billing / orders sub-agent takes over the call**, then control returns to the router | **One foreground agent always talks**; billing / orders workers run silently in the background |
-| Routing | Decision-1 picks the sub-agent; a Decision-1 guard runs on every sub-agent turn (resolved / drifted / wants to end) | Decision-1 detects the topics → foreground **reads them back and asks for confirmation** → workers start only on "yes" |
-| Two topics in one sentence | First is handled, second is queued and offered after closure | Both confirmed together, run in parallel, results delivered one at a time |
+| Who talks to the customer | A router greets, **confirms the topics with the customer**, then the **billing / orders sub-agents answer in turn**, then control returns to the router | **One foreground agent always talks**; billing / orders workers run silently in the background |
+| Routing | Decision-1 picks the topics; a confirmation check reads the customer's yes/no; a guard runs on every sub-agent turn (resolved / drifted / wants to end) | Decision-1 detects the topics → foreground **reads them back and asks for confirmation** → workers start only on "yes" |
+| Two topics in one sentence | Router reads both back and asks to confirm; on "yes" each sub-agent answers in sequence within one turn | Both confirmed together, run in parallel, results delivered one at a time |
 
 ```mermaid
 flowchart LR
@@ -112,7 +112,9 @@ browser ──ws──▶ FastAPI (ACA, managed identity) ──Voice Live──
   sign-in. Login sets a signed, 12 h, HttpOnly cookie; five wrong attempts per minute per IP are throttled.
 - **Two experiences:** *Text* is a normal chat (Voice Live with text-only modalities: no speech models involved).
   *Voice* is speak-and-listen with an orb (listening / hearing / thinking / speaking); the transcript is shown for
-  reference only. **New conversation** (or switching agent/experience) closes the session and starts clean.
+  reference only. **Start session / Stop session** controls sit at the top: nothing connects until you press Start, text
+  and voice input stay locked (with a "session is starting" message) until the agent is ready and has greeted. Picking a
+  sample only loads it; switching agent/experience closes the session, and Stop keeps the transcript on screen.
 - **Same samples for every agent:** 8 scripted conversations (multi-topic, topic switch, correction, missing order
   number, out-of-scope, ...), **written in European Portuguese** (the main language of the callers). In text mode click
   a line, **Send next** or **Run all**; in voice mode the next line is highlighted as a guide of what to say.
@@ -133,7 +135,7 @@ browser ──ws──▶ FastAPI (ACA, managed identity) ──Voice Live──
   -> PCM audio -> browser. Barge-in cancels playback. Decision-1 (routing) and gpt-5.6-luna (replies) run inside the
   agent as ordinary request/response models.
 - **Visual flow:** handoff agent = animated graph (Router / Billing / Orders, token travels along each handoff, path
-  breadcrumb, refused handoffs flash red); background agent = phase stepper (Idle / Proposing / Running) and a task board
+  breadcrumb, topics awaiting confirmation, refused handoffs flash red); background agent = phase stepper (Idle / Proposing / Running) and a task board
   (queued, running, completed, delivered, failed, cancelled). Both have a turn-by-turn timeline.
 - **Decision-1 tab:** one card per model call with the conversation and questions sent, the answers (probability bars
   against their thresholds, choice probabilities), the derived result, latency, and the raw request/response.

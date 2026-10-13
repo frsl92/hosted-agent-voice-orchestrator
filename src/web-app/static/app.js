@@ -3,7 +3,8 @@
 const $ = (id) => document.getElementById(id);
 const state = {
   config: null, agent: null, mode: "text", sample: null, scriptIdx: 0,
-  ws: null, session: null, connected: false, responding: false, callActive: false, callEnded: false, muted: false,
+  ws: null, session: null, connected: false, responding: false, callActive: false, muted: false,
+  sessionState: "stopped", sessionMsg: "", startTimer: null,
   t0: null, traces: [], activeLabel: "–",
   ctx: null, micStream: null, micNode: null, micAnalyser: null, outAnalyser: null, playHead: 0, sources: new Set(),
   agentBubble: null, agentSegs: [], agentRaw: "", pendingBubble: null, waiters: [], orb: "idle", orbTimer: null, turnToken: 0, gen: 0,
@@ -25,12 +26,11 @@ async function init() {
   initVoicePicker();
   renderSamples();
 
-  $("newBtn").onclick = () => newConversation();
+  $("startBtn").onclick = startSession;
+  $("stopBtn").onclick = () => stopSession();
   $("logoutBtn").onclick = async () => { await fetch("/logout", { method: "POST" }); location.href = "/login"; };
-  $("composer").onsubmit = (e) => { e.preventDefault(); const v = $("textInput").value; $("textInput").value = ""; sendText(v); };
+  $("composer").onsubmit = (e) => { e.preventDefault(); if (!isReady()) return; const v = $("textInput").value; $("textInput").value = ""; sendText(v); };
   $("cancelBtn").onclick = () => send({ type: "cancel" });
-  $("callBtn").onclick = startCall;
-  $("hangBtn").onclick = () => endCall();
   $("muteBtn").onclick = toggleMute;
   $("scriptNext").onclick = scriptNext;
   $("scriptAll").onclick = scriptAll;
@@ -39,7 +39,7 @@ async function init() {
   document.querySelectorAll("#filters input[data-src]").forEach((cb) => (cb.onchange = renderTrace));
   document.querySelectorAll(".tab").forEach((t) => (t.onclick = () => selectTab(t.dataset.tab)));
   window.addEventListener("beforeunload", () => { if (state.ws) state.ws.close(); });
-  newConversation();
+  resetConversation();
 }
 
 function selectTab(name) {
@@ -108,12 +108,12 @@ function renderStyles() {
 
 function voicePicked() {
   localStorage.setItem("voicePick", JSON.stringify({ voice: state.voice, style: state.style }));
-  if (state.mode === "voice") newConversation();
+  if (state.mode === "voice") resetConversation();
 }
 
 function changed() {
   renderAgentInfo();
-  newConversation();
+  resetConversation();
 }
 
 function renderAgentInfo() {
@@ -143,17 +143,19 @@ function renderSamples() {
 
 // ------------------------------------------------------------------ conversation lifecycle
 
-const hasContent = () => state.traces.length > 0 || state.connected || !!document.querySelector(".msg");
+const isReady = () => state.sessionState === "ready";
+const EMPTY_TEXT = "Press <b>Start session</b> to begin a conversation. Text and voice are locked until the agent is ready.";
+const EMPTY_VOICE = "Captions appear here as you talk. They are for reference only — the conversation is voice.";
 
-// Close whatever is open, wipe every pane and (in text mode) get a fresh session ready.
-function newConversation() {
+// Stop whatever is open and wipe every pane. Nothing connects until the user presses Start session.
+function resetConversation() {
   state.gen++;
   closeSession();
-  state.callActive = state.callEnded = state.muted = false;
+  state.muted = false;
   state.traces = []; state.t0 = null; state.activeLabel = "–";
   state.scriptIdx = 0;
-  $("chat").innerHTML = `<div class="empty">Type a message below, or load a sample conversation from the left.</div>`;
-  $("captions").innerHTML = `<div class="empty">Captions appear here as you talk. They are for reference only — the conversation is voice.</div>`;
+  $("chat").innerHTML = `<div class="empty">${EMPTY_TEXT}</div>`;
+  $("captions").innerHTML = `<div class="empty">${EMPTY_VOICE}</div>`;
   $("trace").innerHTML = "";
   ["mActive", "mFirst", "mTotal"].forEach((i) => ($(i).textContent = "–"));
   $("decCount").textContent = "0";
@@ -167,15 +169,91 @@ function newConversation() {
   $("textView").hidden = voice;
   $("voiceView").hidden = !voice;
   $("voicePicker").hidden = !voice;
-  renderCallButtons();
-  setOrb("idle", "Press <b>Start call</b> and speak");
-  if (state.sample) renderScript();
-  setReady(false);
-  setStatus("No conversation yet", "");
-  if (!voice) {
-    setStatus("Connecting…", "busy");
-    ensureSession().then(() => { $("textInput").focus(); }).catch(() => {});
+  setSessionState("stopped", "");
+}
+
+// Moves between "stopped" -> "starting" -> "ready" and locks/unlocks every input accordingly.
+function setSessionState(s, msg, err) {
+  clearTimeout(state.startTimer);
+  state.sessionState = s;
+  state.sessionMsg = msg || "";
+  const voice = state.mode === "voice";
+  state.callActive = voice && s !== "stopped";
+  if (s === "stopped") {
+    setStatus("No session", err ? "err" : "");
+    if (voice) setOrb("idle", "Press <b>Start session</b> to begin");
+  } else if (s === "starting") {
+    setStatus("Starting session…", "busy");
+    if (voice) setOrb("thinking", "Starting the session…");
+  } else {
+    setStatus(`Session active · ${agentCfg().name}`, "on");
+    if (voice) setOrb("listening", state.sample ? "Listening — say the highlighted line" : "Listening — go ahead and speak");
   }
+  renderSession();
+}
+
+function renderSession() {
+  const s = state.sessionState;
+  const voice = state.mode === "voice";
+  const ready = s === "ready";
+  $("sessionBar").className = "sessionbar " + s;
+  $("sbTitle").textContent = s === "stopped" ? "No active session" : s === "starting" ? "Starting session…" : `Session active · ${agentCfg().name}`;
+  $("sbMsg").textContent = state.sessionMsg || (
+    s === "stopped" ? "Choose an agent and an experience, optionally load a sample, then press Start session."
+    : s === "starting" ? "Connecting to the agent and waiting for the operator's greeting. Input unlocks as soon as it is ready — the first start can take ~10–15 s."
+    : voice ? "Speak whenever you like. The captions are for reference only."
+    : "Type a message, or run a sample conversation.");
+  $("startBtn").hidden = s !== "stopped";
+  $("stopBtn").hidden = s === "stopped";
+  $("stopBtn").textContent = s === "starting" ? "✕ Cancel" : "■ Stop session";
+  $("textInput").disabled = voice || !ready;
+  $("textInput").placeholder = ready ? "Type a message…" : s === "starting" ? "Starting session… please wait" : "Start a session to chat";
+  $("sendBtn").disabled = voice || !ready;
+  $("cancelBtn").disabled = !ready || !state.responding;
+  $("muteBtn").hidden = !(voice && ready);
+  $("muteBtn").textContent = state.muted ? "🔇 Unmute" : "🎤 Mute";
+  $("muteBtn").classList.toggle("on", state.muted);
+  if (state.sample) renderScript();
+}
+
+// Opens a brand-new session (wiping the previous conversation) and waits for the agent's greeting.
+async function startSession() {
+  if (state.sessionState !== "stopped") return;
+  resetConversation();
+  const gen = state.gen;
+  setSessionState("starting");
+  // Fallback so a lost greeting can never leave the UI locked forever.
+  state.startTimer = setTimeout(() => { if (gen === state.gen && state.sessionState === "starting") markReady(true); }, 60000);
+  try {
+    if (state.mode === "voice") await openMic(gen);
+    else await ensureSession();
+  } catch (err) {
+    if (gen !== state.gen || (err && err.message === "closed")) return; // onclose already reported it
+    failSession(`Could not start the session: ${(err && err.message) || err}`);
+  }
+}
+
+function markReady(timedOut) {
+  if (state.sessionState !== "starting") return;
+  setSessionState("ready");
+  if (timedOut) note("The agent is slow to greet — you can start talking anyway.");
+  if (state.mode === "text") $("textInput").focus();
+}
+
+function failSession(msg) {
+  state.gen++;
+  closeSession();
+  setSessionState("stopped", msg, true);
+}
+
+// Ends the session but leaves the transcript, flow and traces on screen for inspection.
+function stopSession(msg) {
+  state.gen++;
+  closeSession();
+  state.responding = false;
+  state.muted = false;
+  setSessionState("stopped", msg || "Session stopped. Press Start session to open a new one — this conversation stays on screen until then.");
+  note("Session stopped.");
 }
 
 function closeSession() {
@@ -194,7 +272,6 @@ function ensureSession() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const voiceQ = state.mode === "voice" ? `&voice=${encodeURIComponent(state.voice)}&style=${encodeURIComponent(state.style)}` : "";
   const url = `${proto}://${location.host}/ws/session?agent=${encodeURIComponent(state.agent)}&mode=${state.mode}${voiceQ}`;
-  setStatus("Connecting…", "busy");
   state.session = new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
     ws.binaryType = "arraybuffer";
@@ -203,33 +280,24 @@ function ensureSession() {
       if (gen !== state.gen) return;
       if (typeof e.data !== "string") return playPcm(e.data);
       const m = JSON.parse(e.data);
-      if (m.type === "ready") { state.connected = true; setReady(true); resolve(); }
+      if (m.type === "ready") { state.connected = true; resolve(); }
       onMessage(m);
     };
     ws.onclose = (e) => {
       if (gen !== state.gen) return;
       const wasConnected = state.connected;
       state.session = null; state.ws = null; state.connected = false; state.responding = false;
-      stopMic(); setReady(false);
+      stopMic();
       state.waiters.splice(0).forEach((r) => r());
       if (e.code === 4401) { location.href = "/login"; return; }
-      setStatus(wasConnected ? "Disconnected" : "Connection failed", wasConnected ? "" : "err");
-      if (wasConnected) { note("The session ended."); if (state.callActive) endCall(true); setOrb("idle", "Session ended"); }
+      if (wasConnected) note("The session ended.");
+      setSessionState("stopped", wasConnected ? "The session ended. Press Start session to open a new one." : "Could not connect to the agent. Press Start session to try again.", !wasConnected);
       reject(new Error("closed"));
     };
     ws.onerror = () => { if (gen === state.gen) setStatus("Connection error", "err"); };
   });
   state.session.catch(() => {});
   return state.session;
-}
-
-function setReady(on) {
-  const voice = state.mode === "voice";
-  $("textInput").disabled = voice;
-  $("sendBtn").disabled = voice;
-  $("cancelBtn").disabled = !on || !state.responding;
-  if (on) setStatus(`Connected · ${agentCfg().name}`, "on");
-  if (state.sample) renderScript();
 }
 
 function send(obj) {
@@ -239,21 +307,21 @@ function send(obj) {
 
 async function sendText(text) {
   text = (text || "").trim();
-  if (!text || state.mode !== "text") return false;
+  if (!text || state.mode !== "text" || !isReady()) return false;
   if (state.responding) { note("The agent is still answering — wait or press ■ to stop it."); return false; }
   try { await ensureSession(); } catch (_) { return false; }
   state.responding = true;
   $("cancelBtn").disabled = false;
   if (state.sample) renderScript();
-  state.pendingBubble = addBubble("agent pending", "Agent", state.traces.some((t) => t.source === "agent") ? "thinking…" : "warming up the agent — the first answer can take ~10 s…");
+  state.pendingBubble = addBubble("agent pending", "Agent", "thinking…");
   setStatus("Agent working…", "busy");
   return send({ type: "text", text });
 }
 
 // ------------------------------------------------------------------ sample scripts
 
+// Picking a sample only loads its script; it never starts (or restarts) a session.
 function selectSample(s) {
-  if (hasContent()) newConversation();
   state.sample = s;
   state.scriptIdx = 0;
   $("script").hidden = false;
@@ -264,22 +332,24 @@ function selectSample(s) {
 
 function renderScript() {
   const voice = state.mode === "voice";
+  const ready = isReady();
   const ol = $("scriptTurns");
   ol.innerHTML = "";
-  ol.className = voice ? "" : "clickable";
+  ol.className = voice || !ready ? "" : "clickable";
   $("scriptHint").textContent = voice
-    ? "Say these lines in order after you start the call. The next line is highlighted as you speak."
-    : "Click a line to send it, or use the buttons to step through the whole conversation.";
+    ? "Say these lines in order once the session is active. The next line is highlighted as you speak."
+    : ready ? "Click a line to send it, or use the buttons to step through the whole conversation."
+    : "Loaded. Press Start session — the lines unlock once the agent is ready.";
   $("scriptNext").hidden = $("scriptAll").hidden = voice;
   state.sample.turns.forEach((t, i) => {
     const li = document.createElement("li");
     li.textContent = t;
     li.className = i < state.scriptIdx ? "done" : i === state.scriptIdx ? "next" : "";
-    if (!voice) li.onclick = () => { state.scriptIdx = i + 1; renderScript(); sendText(t); };
+    if (!voice && ready) li.onclick = () => { state.scriptIdx = i + 1; renderScript(); sendText(t); };
     ol.appendChild(li);
   });
   const finished = state.scriptIdx >= state.sample.turns.length;
-  $("scriptNext").disabled = $("scriptAll").disabled = finished || state.responding;
+  $("scriptNext").disabled = $("scriptAll").disabled = finished || state.responding || !ready;
 }
 
 function scriptNext() {
@@ -323,16 +393,11 @@ function onMessage(m) {
     case "ready":
       break;
     case "greeting":
-      // The agent greets the caller as soon as the call connects; nothing is shown for the trigger itself.
+      // The agent greets the caller as soon as the session opens; nothing is shown for the trigger itself.
       state.responding = true;
-      $("cancelBtn").disabled = false;
       if (state.mode === "text") {
-        state.pendingBubble = addBubble("agent pending", "Agent", "connecting you to an operator — the first answer can take ~10 s…");
-      } else {
-        setOrb("thinking", "Connecting you to an operator…");
+        state.pendingBubble = addBubble("agent pending", "Agent", "connecting you to an operator…");
       }
-      setStatus("Agent greeting…", "busy");
-      if (state.sample) renderScript();
       break;
     case "user_text":
     case "user_transcript":
@@ -346,36 +411,43 @@ function onMessage(m) {
       break;
     case "agent_start":
       state.responding = true;
-      $("cancelBtn").disabled = false;
+      $("cancelBtn").disabled = !isReady();
       clearPending();
-      setStatus("Agent answering…", "busy");
+      if (isReady()) setStatus("Agent answering…", "busy");
       state.agentBubble = addBubble("agent partial", "Agent", "");
       state.agentSegs = []; state.agentRaw = "";
-      if (state.mode === "voice") setOrb("thinking", "Thinking…");
+      if (state.mode === "voice" && isReady()) setOrb("thinking", "Thinking…");
       break;
     case "agent_delta":
       if (!state.agentBubble) { clearPending(); state.agentBubble = addBubble("agent partial", "Agent", ""); state.agentSegs = []; state.agentRaw = ""; }
       appendAgentText(m.text);
       scrollChat();
       break;
-    case "agent_done":
+    case "agent_done": {
       state.responding = false;
       $("cancelBtn").disabled = true;
       clearPending();
-      setStatus(`Connected · ${agentCfg().name}`, "on");
       if (state.agentBubble) {
         if (m.text && !state.agentRaw.trim()) setAgentText(m.text);
         if (!state.agentBubble.raw.trim()) state.agentBubble.el.remove();
         else state.agentBubble.el.classList.remove("partial");
         state.agentBubble = null; state.agentSegs = []; state.agentRaw = "";
       }
+      if (isReady()) setStatus(`Session active · ${agentCfg().name}`, "on");
       if (state.mode === "voice") afterPlayback();
       state.waiters.splice(0).forEach((r) => r());
+      if (state.sessionState === "starting") {
+        // The greeting is done: unlock input once it has finished playing.
+        const gen = state.gen;
+        const wait = state.mode === "voice" && state.ctx ? Math.max(0, state.playHead - state.ctx.currentTime) * 1000 + 300 : 0;
+        setTimeout(() => { if (gen === state.gen) markReady(); }, wait);
+      }
       if (state.sample) renderScript();
       break;
+    }
     case "interrupt":
       stopPlayback();
-      if (state.mode === "voice") setOrb("hearing", "Listening…");
+      if (state.mode === "voice" && isReady()) setOrb("hearing", "Listening…");
       break;
     case "busy":
       note("The agent is still answering.");
@@ -386,6 +458,7 @@ function onMessage(m) {
       state.responding = false;
       $("cancelBtn").disabled = true;
       state.waiters.splice(0).forEach((r) => r());
+      if (state.sessionState === "starting") markReady(); // let the user retry rather than staying locked
       break;
     case "trace":
       addTrace(m);
@@ -447,95 +520,61 @@ function addBubble(cls, who, text) {
   return { el, body };
 }
 
-// ------------------------------------------------------------------ voice call
+// ------------------------------------------------------------------ voice session
 
-function renderCallButtons() {
-  const active = state.callActive;
-  $("callBtn").hidden = active;
-  $("callBtn").textContent = state.callEnded ? "📞 Start a new call" : "📞 Start call";
-  $("muteBtn").hidden = $("hangBtn").hidden = !active;
-  $("muteBtn").textContent = state.muted ? "🔇 Unmute" : "🎤 Mute";
-  $("muteBtn").classList.toggle("on", state.muted);
-}
-
-async function startCall() {
-  if (state.callEnded) newConversation();
-  const gen = state.gen;
-  state.callActive = true;
-  renderCallButtons();
-  setOrb("idle", "Connecting…");
-  try {
-    await ensureAudio();
-    const q = new URLSearchParams(location.search);
-    // Browser noise suppression/AGC gated and clipped Bluetooth headset audio; Voice Live already applies
-    // Azure deep noise suppression and echo cancellation, so only AEC stays on. Override with ?ns=1&agc=1&aec=0.
-    const flag = (k, def) => (q.has(k) ? q.get(k) !== "0" : def);
-    state.micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: flag("aec", true), noiseSuppression: flag("ns", false), autoGainControl: flag("agc", false) },
-    });
-    await ensureSession();
-    if (gen !== state.gen) return;
-    const track = state.micStream.getAudioTracks()[0];
-    sendDiag({
-      event: "mic.start", label: track && track.label, ctxRate: state.ctx.sampleRate,
-      settings: track && track.getSettings ? track.getSettings() : null,
-    });
-    const src = state.ctx.createMediaStreamSource(state.micStream);
-    state.micNode = new AudioWorkletNode(state.ctx, "mic-processor");
-    let lastMsg = 0, maxGap = 0, frames = 0, quiet = 0;
-    state.micNode.port.onmessage = (e) => {
-      if (!(e.data instanceof ArrayBuffer)) {
-        const s = e.data;
-        sendDiag({ event: "mic.stats", peak: +s.peak.toFixed(3), rms: +s.rms.toFixed(4), frames, maxGapMs: Math.round(maxGap),
-          buffered: state.ws ? state.ws.bufferedAmount : null, muted: state.muted });
-        frames = 0; maxGap = 0;
-        quiet = s.peak < 0.01 && !state.muted ? quiet + 1 : 0;
-        if (quiet === 4) note("The microphone seems silent — check the browser's selected input device and permissions.");
-        return;
-      }
-      const now = performance.now();
-      if (lastMsg) maxGap = Math.max(maxGap, now - lastMsg);
-      lastMsg = now;
-      frames++;
-      if (state.ws && state.ws.readyState === WebSocket.OPEN && !state.muted) state.ws.send(e.data);
-    };
-    state.micAnalyser = state.ctx.createAnalyser();
-    state.micAnalyser.fftSize = 512;
-    src.connect(state.micNode);
-    src.connect(state.micAnalyser);
-    if (!state.responding) {
-      setOrb("listening", state.sample ? "Listening — say the highlighted line" : "Listening — go ahead and speak");
+// Asks for the microphone, opens the session and wires the mic. Audio is only sent once the session is
+// ready (after the agent's greeting), so the caller cannot talk over it.
+async function openMic(gen) {
+  await ensureAudio();
+  const q = new URLSearchParams(location.search);
+  // Browser noise suppression/AGC gated and clipped Bluetooth headset audio; Voice Live already applies
+  // Azure deep noise suppression and echo cancellation, so only AEC stays on. Override with ?ns=1&agc=1&aec=0.
+  const flag = (k, def) => (q.has(k) ? q.get(k) !== "0" : def);
+  state.micStream = await navigator.mediaDevices.getUserMedia({
+    audio: { channelCount: 1, echoCancellation: flag("aec", true), noiseSuppression: flag("ns", false), autoGainControl: flag("agc", false) },
+  });
+  if (gen !== state.gen) { stopMic(); return; }
+  await ensureSession();
+  if (gen !== state.gen) return;
+  const track = state.micStream.getAudioTracks()[0];
+  sendDiag({
+    event: "mic.start", label: track && track.label, ctxRate: state.ctx.sampleRate,
+    settings: track && track.getSettings ? track.getSettings() : null,
+  });
+  const src = state.ctx.createMediaStreamSource(state.micStream);
+  state.micNode = new AudioWorkletNode(state.ctx, "mic-processor");
+  let lastMsg = 0, maxGap = 0, frames = 0, quiet = 0;
+  state.micNode.port.onmessage = (e) => {
+    if (!(e.data instanceof ArrayBuffer)) {
+      const s = e.data;
+      sendDiag({ event: "mic.stats", peak: +s.peak.toFixed(3), rms: +s.rms.toFixed(4), frames, maxGapMs: Math.round(maxGap),
+        buffered: state.ws ? state.ws.bufferedAmount : null, muted: state.muted });
+      frames = 0; maxGap = 0;
+      quiet = isReady() && s.peak < 0.01 && !state.muted ? quiet + 1 : 0;
+      if (quiet === 4) note("The microphone seems silent — check the browser's selected input device and permissions.");
+      return;
     }
-    levelLoop(gen);
-  } catch (err) {
-    if (gen !== state.gen) return;
-    stopMic();
-    state.callActive = false;
-    renderCallButtons();
-    setOrb("idle", "Press <b>Start call</b> and speak");
-    addBubble("err", "Microphone", `Could not start the call: ${err.message || err}`);
-  }
+    const now = performance.now();
+    if (lastMsg) maxGap = Math.max(maxGap, now - lastMsg);
+    lastMsg = now;
+    frames++;
+    if (isReady() && state.ws && state.ws.readyState === WebSocket.OPEN && !state.muted) state.ws.send(e.data);
+  };
+  state.micAnalyser = state.ctx.createAnalyser();
+  state.micAnalyser.fftSize = 512;
+  src.connect(state.micNode);
+  src.connect(state.micAnalyser);
+  levelLoop(gen);
 }
 
 function sendDiag(data) {
   if (state.ws && state.ws.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify({ type: "diag", ...data }));
 }
 
-function endCall(silent) {
-  state.gen++; // detaches the old socket's handlers
-  closeSession();
-  state.callActive = false;
-  state.callEnded = true;
-  renderCallButtons();
-  setOrb("idle", "Call ended — transcript and diagnostics are still on screen");
-  setStatus("Call ended", "");
-  if (!silent) note("Call ended.");
-}
-
 function toggleMute() {
   state.muted = !state.muted;
   if (state.micStream) state.micStream.getAudioTracks().forEach((t) => (t.enabled = !state.muted));
-  renderCallButtons();
+  renderSession();
 }
 
 function setOrb(name, label) {

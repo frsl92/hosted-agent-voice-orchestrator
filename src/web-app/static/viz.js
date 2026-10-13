@@ -26,7 +26,7 @@ const Viz = (() => {
 
   function reset(k) {
     gen++; kind = k || kind; chain = Promise.resolve();
-    g = { active: null, speaking: null, path: [], queue: [], ended: false, refused: null, edges: {} };
+    g = { active: null, speaking: null, path: [], queue: [], proposed: [], ended: false, refused: null, edges: {} };
     counts = { handoffs: 0, decisions: 0, tasks: 0 };
     tasks = new Map(); phase = "idle"; plan = null; turns = 0; turnEl = null; decN = 0; lastDec = null; pendingDerived = []; cardCount = 0;
     el.timeline.innerHTML = ""; el.decisions.innerHTML = `<div class="pane-empty">Every call to Microsoft-Decision-1 shows up here, with the exact input it received and what it answered.</div>`;
@@ -83,8 +83,9 @@ const Viz = (() => {
     const meta = el.flow.querySelector("#flowMeta"); if (!meta) return;
     const path = g.path.map(a => `<span class="pill ${a}">${NODES[a]?.label || esc(a)}</span>`).join('<span class="arrow">→</span>');
     const queue = g.queue.map(q => `<span class="pill queue" title="Topic waiting in the queue">⏭ ${esc(typeof q === "string" ? q : q.topic || JSON.stringify(q))}</span>`).join("");
+    const proposed = g.proposed.length ? `<span class="muted">Confirming with the customer</span>` + g.proposed.map(q => `<span class="pill queue" title="Waiting for the customer to confirm">🙋 ${esc(q)}</span>`).join("") : "";
     meta.innerHTML = (path ? `<span class="muted">Path</span><span class="path">${path}</span>` : `<span class="muted">Waiting for the first turn…</span>`) +
-      (queue ? `<span class="muted">Queued</span>${queue}` : "") + (g.ended ? `<span class="pill ended">call ended</span>` : "");
+      proposed + (queue ? `<span class="muted">Queued</span>${queue}` : "") + (g.ended ? `<span class="pill ended">call ended</span>` : "");
   }
 
   function animateToken(a, b, myGen) {
@@ -119,6 +120,8 @@ const Viz = (() => {
         if (!g.path.length) g.path = [d.agent];
         paintGraph();
       });
+    } else if (k === "phase") {
+      enqueue(() => { g.proposed = d.phase === "proposing" ? (d.proposed || []).map(p => p.topic) : []; paintGraph(); });
     } else if (k === "decision.guard") {
       enqueue(() => { g.queue = d.queue || g.queue; paintGraph(); });
     } else if (k === "handoff") {

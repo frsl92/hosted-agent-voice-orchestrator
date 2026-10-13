@@ -16,9 +16,9 @@ AGENTS: list[dict[str, Any]] = [
         "name": "Handoff agent",
         "tagline": "Router → billing / orders specialist → router",
         "description": (
-            "A router greets the caller. Microsoft-Decision-1 detects the topic(s) in each utterance and the call is "
-            "handed to the billing or order-status sub-agent, which talks to the customer until the topic is resolved "
-            "and then hands back to the router (or on to the next queued topic)."
+            "A router greets the caller. Microsoft-Decision-1 detects the topic(s) in each utterance and the router "
+            "reads them back for confirmation. Once the customer confirms, the call is handed to the billing and/or "
+            "order-status sub-agent in turn; each explains its result and hands back, and the router closes the call."
         ),
     },
     {

@@ -82,18 +82,36 @@ DIRECTIVE_ANYTHING_ELSE = (
 )
 DIRECTIVE_GOODBYE = "The customer is done. Say a short, warm goodbye and thank them for calling."
 
-DIRECTIVE_HANDOFF_FIRST = "You are taking over the call now. Answer the customer's latest message."
-DIRECTIVE_ALSO_RAISED = (
-    "The customer also raised a second topic ({other}). Start with one short sentence saying you will take care of "
-    "that right after this, then work on the current topic."
+DIRECTIVE_CONFIRM = (
+    "The customer has told you what they need: {topics}. Do NOT answer yet and do NOT say you are transferring or "
+    "checking anything. In one or two short sentences, say what you understood (mention the order number if they "
+    "gave one) and ask them to confirm that is right. If order status is one of the topics and they have not given an "
+    "order number, also ask them to confirm and give you the order number in the same sentence."
+)
+DIRECTIVE_REASK = (
+    "The customer did not clearly answer. Briefly ask again whether you understood correctly that they need: "
+    "{topics}. Do not answer or check anything yet."
+)
+DIRECTIVE_OPEN_QUESTION = (
+    "Drop the earlier understanding. Ask an open question: what can you help with, billing or order status?"
+)
+DIRECTIVE_CORRECTION = "Say no problem, and ask what they would like to change or what you can help with."
+DIRECTIVE_CONFIRMED = (
+    "The customer has just confirmed that you should look into {topic}. Start with a very short natural line saying "
+    "you will check it now, then use your tools and explain the result in detail, in two or three sentences. Cover "
+    "only {topic}: other topics the customer raised are handled afterwards by a colleague, so do not mention them or "
+    "say you cannot help with them. If you lack a detail such as the order number, ask for it instead. When the "
+    "result has been given, call return_to_router."
 )
 DIRECTIVE_NOTED_OTHER = (
     "The customer also mentioned {other}. Briefly say that you will take care of that right after this one, "
     "and carry on with the current topic."
 )
 DIRECTIVE_BRIDGE = (
-    "You are taking over for a topic the customer raised earlier ({topic}). Start with a short bridging line such as "
-    '"{bridge}" (said in the customer\'s language) and then handle it using the conversation so far.'
+    "You are taking over for a topic the customer already confirmed ({topic}). Start with a short bridging line such "
+    'as "{bridge}" (said in the customer\'s language), then use your tools and explain the result in detail, in two '
+    "or three sentences, using the conversation so far. If you lack a detail, ask for it instead. When the result "
+    "has been given, call return_to_router."
 )
 
 TOPIC_LABEL = {"billing": "billing", "order_status": "order status"}
