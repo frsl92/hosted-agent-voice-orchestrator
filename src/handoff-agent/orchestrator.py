@@ -161,8 +161,9 @@ class Orchestrator:
                 signals = TurnSignals()
                 if plan is not None and turn.parts:
                     # Each agent's answer is its own message (and its own breath in the voice).
-                    turn.parts.append(SEGMENT_BREAK)
-                    yield SEGMENT_BREAK
+                    if not "".join(turn.parts).endswith(SEGMENT_BREAK):
+                        turn.parts.append(SEGMENT_BREAK)
+                        yield SEGMENT_BREAK
 
         state["greeted"] = True
         reply = "".join(turn.parts).strip()

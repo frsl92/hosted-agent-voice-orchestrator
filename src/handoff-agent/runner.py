@@ -12,7 +12,7 @@ from agent_framework import Message, add_usage_details
 
 from calltrace import emit_usage
 from sub_agents import create_billing_agent, create_orders_agent, create_router_agent
-from orchestrator import BILLING, ORDERS, ROUTER, TurnSignals
+from orchestrator import BILLING, ORDERS, ROUTER, SEGMENT_BREAK, TurnSignals
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,7 @@ _FACTORIES = {
 }
 
 _TOOL_TYPES = ("function_call", "function_result")
+RETURN_TOOL = "return_to_router"
 
 
 def _norm(text: str) -> str:
@@ -61,16 +62,27 @@ class MafAgentRunner:
             return with_space(segment)
 
         usage: Any = None
+        unsegmented = False  # spoken text not yet closed by a segment break
         async for update in maf_agent.run(messages, stream=True):
-            for c in update.contents or []:
+            contents = update.contents or []
+            for c in contents:
                 if getattr(c, "type", None) == "usage":
                     usage = add_usage_details(usage, c.usage_details)
-            if any(getattr(c, "type", None) in _TOOL_TYPES for c in (update.contents or [])):
+            if any(getattr(c, "type", None) in _TOOL_TYPES for c in contents):
                 out = flush()
                 if out:
                     emitted += out
+                    unsegmented = unsegmented or bool(out.strip())
                     yield out
                 pending_space = True
+                # "I'll check that now" is its own message, spoken while the data tools run; the answer that
+                # follows is the next one. The final return_to_router call closes nothing: the caller adds the break.
+                calls_return = any(getattr(c, "name", None) == RETURN_TOOL for c in contents)
+                if unsegmented and not calls_return and not signals.return_requested:
+                    emitted += SEGMENT_BREAK
+                    unsegmented = False
+                    pending_space = False
+                    yield SEGMENT_BREAK
             text = update.text
             if not text:
                 continue
@@ -80,6 +92,7 @@ class MafAgentRunner:
             text = with_space(text)
             pending_space = False
             emitted += text
+            unsegmented = unsegmented or bool(text.strip())
             yield text
 
         out = flush()

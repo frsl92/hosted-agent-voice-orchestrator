@@ -4,8 +4,10 @@ import runner as runner_mod
 from orchestrator import ROUTER, TurnSignals
 
 
-def upd(text="", kinds=()):
-    return SimpleNamespace(text=text, contents=[SimpleNamespace(type=k) for k in kinds] or [SimpleNamespace(type="text")])
+def upd(text="", kinds=(), name=None):
+    return SimpleNamespace(
+        text=text, contents=[SimpleNamespace(type=k, name=name) for k in kinds] or [SimpleNamespace(type="text")]
+    )
 
 
 class FakeMafAgent:
@@ -30,18 +32,36 @@ async def collect(updates):
     return "".join([c async for c in r.stream(ROUTER, [{"role": "user", "text": "hi"}], None, signals)])
 
 
-async def test_streams_live_and_spaces_after_tool_call():
+async def test_streams_live_and_breaks_the_message_at_the_tool_call():
     out = await collect(
         [upd("Let me check."), upd("", ["function_call"]), upd("", ["function_result"]), upd("It shipped.")]
     )
-    assert out == "Let me check. It shipped."
+    assert out == "Let me check.\n\nIt shipped."
+
+
+async def test_several_tool_calls_make_a_single_break():
+    out = await collect(
+        [
+            upd("Checking."),
+            upd("", ["function_call"], "lookup_order"),
+            upd("", ["function_call"], "get_tracking"),
+            upd("", ["function_result"]),
+            upd("It shipped."),
+        ]
+    )
+    assert out == "Checking.\n\nIt shipped."
+
+
+async def test_return_to_router_call_adds_no_break():
+    out = await collect([upd("All done."), upd("", ["function_call"], "return_to_router"), "RETURN"])
+    assert out == "All done."
 
 
 async def test_repeat_after_return_to_router_is_dropped():
     out = await collect(
         [
             upd("Your order is processing."),
-            upd("", ["function_call"]),
+            upd("", ["function_call"], "return_to_router"),
             "RETURN",
             upd("", ["function_result"]),
             upd("Your order is processing."),

@@ -43,7 +43,10 @@ SAMPLES: list[dict[str, Any]] = [
     {
         "id": "bill-and-order",
         "title": "Bill and order in one go",
-        "description": "Two topics in one sentence: shows multi-topic detection, queueing and the hand-over between them.",
+        "description": (
+            "Two topics in one sentence. The agent reads both back, you confirm, each topic is then looked up "
+            "and explained in turn, and you close the call."
+        ),
         "turns": [
             "Olá, queria saber o valor da minha última fatura e também ver o estado da encomenda 12345.",
             "Sim, está correto, pode avançar.",
@@ -53,20 +56,20 @@ SAMPLES: list[dict[str, Any]] = [
     {
         "id": "billing",
         "title": "Billing question",
-        "description": "Balance and due date, then a clean end of call.",
+        "description": "One topic: request, confirmation, the invoice details, then a clean end of call.",
         "turns": [
             "Bom dia, pode dizer-me quanto tenho para pagar este mês?",
-            "Sim, é isso mesmo. E até quando tenho de pagar?",
+            "Sim, é isso mesmo, pode verificar.",
             "Era só isso, obrigado. Até logo!",
         ],
     },
     {
         "id": "order-tracking",
         "title": "Order tracking",
-        "description": "A shipped order with tracking details.",
+        "description": "A shipped order: the agent confirms the order, then gives status, estimate and tracking details.",
         "turns": [
             "Olá, queria saber da minha encomenda 12345.",
-            "Sim, é essa. Qual é o número de seguimento?",
+            "Sim, é essa, pode verificar.",
             "Ótimo, obrigado. Até logo!",
         ],
     },
@@ -74,34 +77,56 @@ SAMPLES: list[dict[str, Any]] = [
         "id": "order-processing",
         "title": "Order not shipped yet",
         "description": "The order is still processing: there is no tracking number yet, only an estimate.",
-        "turns": ["Onde está a minha encomenda 67890?", "Sim, é essa. Quando é que vai chegar?"],
+        "turns": [
+            "Onde está a minha encomenda 67890?",
+            "Sim, é essa, pode verificar.",
+            "Percebi, obrigado. Até logo!",
+        ],
     },
     {
         "id": "topic-switch",
         "title": "Change of topic",
-        "description": "Starts with billing, then the customer switches to an order mid-conversation.",
+        "description": (
+            "The customer asks for billing, rejects the read-back and switches to an order. The agent proposes "
+            "the new topic, waits for the confirmation and only then looks it up."
+        ),
         "turns": [
             "Gostava de saber o meu saldo atual.",
             "Na verdade, esqueça isso. O que se passa com a encomenda 55555?",
+            "Sim, pode verificar.",
             "Obrigado, até logo.",
         ],
     },
     {
         "id": "correction",
         "title": "Customer corrects themselves",
-        "description": "The customer gives one order number and then corrects it.",
-        "turns": ["Por favor, veja-me a encomenda 12345.", "Não, eu queria dizer a encomenda 67890.", "Sim, está certo. Obrigado!"],
+        "description": "The customer gives one order number, rejects the read-back to correct it, then confirms the new one.",
+        "turns": [
+            "Por favor, veja-me a encomenda 12345.",
+            "Não, eu queria dizer a encomenda 67890.",
+            "Sim, está certo, pode verificar.",
+            "Obrigado, até logo!",
+        ],
     },
     {
         "id": "missing-order",
         "title": "Missing order number",
-        "description": "The agent has to ask for the order number before it can look anything up.",
-        "turns": ["Quero saber onde está a minha encomenda.", "É a 55555.", "Sim, está certo. Muito obrigado!"],
+        "description": "The agent asks for the order number while confirming, and only looks it up once it has it.",
+        "turns": [
+            "Quero saber onde está a minha encomenda.",
+            "Sim, é a 55555, pode verificar.",
+            "Muito obrigado, até logo!",
+        ],
     },
     {
         "id": "out-of-scope",
         "title": "Out-of-scope request",
-        "description": "Something the agents cannot do, followed by an in-scope question.",
-        "turns": ["Pode ajudar-me a mudar de tarifário móvel?", "Está bem, então pode ver-me a fatura anterior?", "Sim, por favor."],
+        "description": "Something the agents cannot do, followed by an in-scope question that goes through the normal confirmation.",
+        "turns": [
+            "Pode ajudar-me a mudar de tarifário móvel?",
+            "Está bem, então pode ver-me a fatura anterior?",
+            "Sim, por favor.",
+            "Era só isso, obrigado. Até logo!",
+        ],
     },
 ]
