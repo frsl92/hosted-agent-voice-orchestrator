@@ -305,6 +305,12 @@ class Orchestrator:
                 return _Plan(AGENT_FOR_TOPIC[first], P.DIRECTIVE_CONFIRMED.format(topic=_label(first)))
             return _Plan(ROUTER, P.DIRECTIVE_CLARIFY)
 
+        if verdict == "amend" and proposed:
+            # "Actually the order is 3472": keep every proposed topic and ask for confirmation again.
+            plan = self._propose(state, proposed)
+            plan.directive = P.DIRECTIVE_CONFIRM_AMENDED.format(topics=" and ".join(_label(t) for t in proposed))
+            return plan
+
         if verdict == "neither" and proposed:
             state["reasks"] += 1
             if state["reasks"] <= MAX_REASKS:

@@ -88,6 +88,11 @@ DIRECTIVE_CONFIRM = (
     "gave one) and ask them to confirm that is right. If order status is one of the topics and they have not given an "
     "order number, also ask them to confirm and give you the order number in the same sentence."
 )
+DIRECTIVE_CONFIRM_AMENDED = (
+    "The customer corrected a detail of what they asked for, and still needs: {topics}. Do NOT answer yet and do NOT "
+    "say you are transferring or checking anything. In one or two short sentences, say what you now understood, using "
+    "the corrected detail (mention the corrected order number), and ask them to confirm that is right."
+)
 DIRECTIVE_REASK = (
     "The customer did not clearly answer. Briefly ask again whether you understood correctly that they need: "
     "{topics}. Do not answer or check anything yet."
@@ -95,7 +100,10 @@ DIRECTIVE_REASK = (
 DIRECTIVE_OPEN_QUESTION = (
     "Drop the earlier understanding. Ask an open question: what can you help with, billing or order status?"
 )
-DIRECTIVE_CORRECTION = "Say no problem, and ask what they would like to change or what you can help with."
+DIRECTIVE_CORRECTION = (
+    "Say no problem, and ask what they would like to change or what you can help with. Do not ask them to confirm "
+    "anything and do not offer to look anything up yet."
+)
 DIRECTIVE_CONFIRMED = (
     "The customer has just confirmed that you should look into {topic}. Start with a very short natural line saying "
     "you will check it now, then use your tools and explain the result in detail, in two or three sentences. Cover "

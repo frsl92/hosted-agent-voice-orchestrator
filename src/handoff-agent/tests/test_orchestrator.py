@@ -162,6 +162,30 @@ async def test_rejected_proposal_replans_from_the_correction(state):
     assert [c["agent"] for c in runner.calls] == [ROUTER, ROUTER]
 
 
+async def test_amended_proposal_keeps_every_topic_and_asks_again(state):
+    orch, decision, runner = make(
+        [analysis(billing=0.9, orders=0.9, primary="order_status")], verdicts=["amend"]
+    )
+    await say(orch, state, "order 12345 and my bill")
+    await say(orch, state, "wait, the order is 3472")
+    assert decision.analyze_calls == 1
+    assert state["phase"] == "proposing"
+    assert state["proposed"] == ["order_status", "billing"]
+    assert [c["agent"] for c in runner.calls] == [ROUTER, ROUTER]
+    assert "corrected a detail" in runner.calls[1]["directive"]
+
+
+async def test_amended_then_confirmed_runs_both_topics(state):
+    orch, _, runner = make(
+        [analysis(billing=0.9, orders=0.9, primary="order_status"), analysis()],
+        verdicts=["amend", "yes"],
+    )
+    await say(orch, state, "order 12345 and my bill")
+    await say(orch, state, "wait, the order is 3472")
+    await say(orch, state, "yes")
+    assert [c["agent"] for c in runner.calls] == [ROUTER, ROUTER, ORDERS, BILLING, ROUTER]
+
+
 async def test_rejected_proposal_without_new_topic_asks_what_to_change(state):
     orch, _, runner = make([analysis(billing=0.9, primary="billing"), analysis()], verdicts=["no"])
     await say(orch, state, "my bill")
