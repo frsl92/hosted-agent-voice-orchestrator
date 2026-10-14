@@ -1,0 +1,143 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+requiredVersions:
+  azd: '>=1.27.1'
+  extensions:
+    azure.ai.agents: '>=1.0.0-beta.9'
+name: hosted-agent-voice-orchestrator
+services:
+  ai-project:
+    host: azure.ai.project
+  handoff-agent:
+    host: azure.ai.agent
+    metadata:
+      tags:
+        - AI Agent Hosting
+        - Responses Protocol
+        - Microsoft Agent Framework
+        - Voice Live
+        - Handoff
+        - Python
+    project: src/handoff-agent
+    language: python
+    codeConfiguration:
+      runtime: python_3_13
+      entryPoint: main.py
+      dependencyResolution: remote_build
+    uses:
+      - ai-project
+    kind: hosted
+    name: handoff-agent
+    displayName: Telecom call center - handoff (MAF, Voice Live, Decision-1)
+    description: A router agent hands the call to a billing or order-status sub-agent. Routing is decided by Microsoft-Decision-1.
+    protocols:
+      - protocol: responses
+        version: 2.0.0
+    env:
+      AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+      DECISION_DEPLOYMENT_NAME: Decision-1
+      SUBAGENT_MODE: remote
+      BILLING_AGENT_NAME: billing-agent
+      ORDERS_AGENT_NAME: orders-agent
+      SUBAGENT_USER_DELEGATION: "false"
+    container:
+      resources:
+        cpu: '0.5'
+        memory: 1Gi
+  background-agent:
+    host: azure.ai.agent
+    metadata:
+      tags:
+        - AI Agent Hosting
+        - Responses Protocol
+        - Microsoft Agent Framework
+        - Voice Live
+        - Background Tasks
+        - Python
+    project: src/background-agent
+    language: python
+    codeConfiguration:
+      runtime: python_3_13
+      entryPoint: main.py
+      dependencyResolution: remote_build
+    uses:
+      - ai-project
+    kind: hosted
+    name: background-agent
+    displayName: Telecom call center - foreground/background (MAF, Voice Live, Decision-1)
+    description: A foreground agent confirms the customer's tasks, then billing and order-status workers run in the background.
+    protocols:
+      - protocol: responses
+        version: 2.0.0
+    env:
+      AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+      DECISION_DEPLOYMENT_NAME: Decision-1
+      SUBAGENT_MODE: remote
+      BILLING_AGENT_NAME: billing-agent
+      ORDERS_AGENT_NAME: orders-agent
+    container:
+      resources:
+        cpu: '0.5'
+        memory: 1Gi
+  billing-agent:
+    host: azure.ai.agent
+    metadata:
+      tags:
+        - AI Agent Hosting
+        - Responses Protocol
+        - Microsoft Agent Framework
+        - Sub-agent
+        - Python
+    project: src/billing-agent
+    language: python
+    codeConfiguration:
+      runtime: python_3_13
+      entryPoint: main.py
+      dependencyResolution: remote_build
+    uses:
+      - ai-project
+    kind: hosted
+    name: billing-agent
+    displayName: Telecom call center - billing specialist (MAF)
+    description: Billing sub-agent invoked by the orchestrator agents over the Responses API. Keeps one Foundry session per call.
+    protocols:
+      - protocol: responses
+        version: 2.0.0
+    env:
+      AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+    container:
+      resources:
+        cpu: '0.5'
+        memory: 1Gi
+  orders-agent:
+    host: azure.ai.agent
+    metadata:
+      tags:
+        - AI Agent Hosting
+        - Responses Protocol
+        - Microsoft Agent Framework
+        - Sub-agent
+        - Python
+    project: src/orders-agent
+    language: python
+    codeConfiguration:
+      runtime: python_3_13
+      entryPoint: main.py
+      dependencyResolution: remote_build
+    uses:
+      - ai-project
+    kind: hosted
+    name: orders-agent
+    displayName: Telecom call center - order-status specialist (MAF)
+    description: Order-status sub-agent invoked by the orchestrator agents over the Responses API. Keeps one Foundry session per call.
+    protocols:
+      - protocol: responses
+        version: 2.0.0
+    env:
+      AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+    container:
+      resources:
+        cpu: '0.5'
+        memory: 1Gi
+infra:
+  provider: microsoft.foundry

@@ -1,0 +1,20 @@
+[project]
+name = "voicelive-client"
+version = "0.1.0"
+description = "Console Voice Live client (microphone or typed text) for the hosted call-center agents."
+requires-python = ">=3.13"
+dependencies = [
+    "azure-ai-voicelive[aiohttp]==1.2.0b5",
+    "azure-identity",
+]
+
+[project.optional-dependencies]
+audio = ["pyaudio"]
+
+[tool.uv]
+prerelease = "allow"
+
+[[tool.uv.index]]
+name = "msiopypi"
+url = "https://pkgs.dev.azure.com/ms-feed-12/1es-public/_packaging/pypi-public/pypi/simple/"
+default = true

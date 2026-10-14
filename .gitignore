@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.azure/
+.pytest_cache/
+.agentignore.local
+src/web-app/requirements.txt

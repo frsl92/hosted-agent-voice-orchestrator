@@ -1,0 +1,30 @@
+[project]
+name = "handoff-agent"
+version = "0.1.0"
+description = "Telecom call-center voice agent: router hands off to billing / order-status sub-agents (MAF, Voice Live, Decision-1)."
+requires-python = ">=3.13"
+dependencies = [
+    "agent-framework-foundry",
+    "agent-framework-foundry-hosting>=1.0.0b260813",
+    "azure-ai-projects>=2.3.0",
+    "azure-identity",
+    "httpx",
+    "python-dotenv",
+    "debugpy",
+]
+
+[dependency-groups]
+dev = ["pytest", "pytest-asyncio"]
+
+[tool.uv]
+prerelease = "allow"
+
+[[tool.uv.index]]
+name = "msiopypi"
+url = "https://pkgs.dev.azure.com/ms-feed-12/1es-public/_packaging/pypi-public/pypi/simple/"
+default = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]

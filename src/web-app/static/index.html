@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Call center agent tester</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="logo">☎</span>
+      <div>
+        <h1>Call center agent tester</h1>
+        <small id="project">Foundry hosted agents · Voice Live · Microsoft-Decision-1</small>
+      </div>
+    </div>
+    <div class="picker"><span class="label">Agent</span><div class="seg" id="agentSeg"></div></div>
+    <div class="picker"><span class="label">Experience</span><div class="seg" id="modeSeg"></div></div>
+    <div class="picker voice-only" id="voicePicker" hidden>
+      <span class="label">Voice</span><select id="voiceSel" title="Voice used by Voice Live (locale forced to pt-PT)"></select>
+      <span class="label">Style</span><select id="styleSel" title="Speaking style (only for voices that support it)"></select>
+      <span class="label">Mic</span><select id="micSel" title="Microphone used for the voice session"></select>
+      <label class="inline"><input type="checkbox" id="aecChk" /> echo cancel</label>
+      <span class="hint-icon" tabindex="0" aria-label="About echo cancel">!<span class="tip">Browser echo cancellation. Leave it off with a headset (it can silence Bluetooth mics); Voice Live already cancels echo on the server. Turn it on when using laptop speakers.</span></span>
+    </div>
+    <span class="spacer"></span>
+    <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">No session</span></div>
+    <button id="logoutBtn" class="ghost" title="Sign out">Sign out</button>
+  </header>
+
+  <main>
+    <aside id="left">
+      <section>
+        <h2>About this agent</h2>
+        <div id="agentInfo" class="info"></div>
+      </section>
+      <section>
+        <h2>Sample conversations</h2>
+        <small class="hint">Same scripts for every agent. Picking one only loads it — start a session to use it.</small>
+        <div id="samples"></div>
+      </section>
+    </aside>
+
+    <section id="center">
+      <div id="sessionBar" class="sessionbar stopped">
+        <span class="spinner"></span>
+        <div class="sb-text"><b id="sbTitle">No active session</b><div id="sbMsg" class="hint"></div></div>
+        <button id="startBtn" class="primary big">▶ Start session</button>
+        <button id="stopBtn" class="big danger" hidden>■ Stop session</button>
+      </div>
+
+      <div id="script" hidden>
+        <div class="script-head">
+          <strong id="scriptTitle"></strong>
+          <span class="spacer"></span>
+          <button id="scriptNext">Send next ▸</button>
+          <button id="scriptAll">Run all ▸▸</button>
+          <button id="scriptClose" class="ghost" title="Close script">✕</button>
+        </div>
+        <div id="scriptHint" class="hint"></div>
+        <ol id="scriptTurns"></ol>
+      </div>
+
+      <div id="textView" class="view">
+        <div id="chat" class="chat"></div>
+        <form id="composer" autocomplete="off">
+          <input id="textInput" placeholder="Start a session to chat" disabled />
+          <button id="sendBtn" class="primary" disabled>Send</button>
+          <button type="button" id="cancelBtn" title="Stop the agent's current answer" disabled>■</button>
+        </form>
+      </div>
+
+      <div id="voiceView" class="view" hidden>
+        <div class="stage">
+          <div id="orb" class="orb idle"><div class="ring r1"></div><div class="ring r2"></div><div class="core">🎙</div></div>
+          <div id="orbLabel" class="orb-label">Press <b>Start session</b> to begin</div>
+          <div class="call-controls">
+            <button id="muteBtn" class="big" hidden>🎤 Mute</button>
+          </div>
+        </div>
+        <div id="captions" class="chat captions"></div>
+      </div>
+    </section>
+
+    <aside id="right">
+      <div class="tabs">
+        <button class="tab active" data-tab="flow">Flow</button>
+        <button class="tab" data-tab="decisions">Decision-1 <span id="decCount" class="badge">0</span></button>
+        <button class="tab" data-tab="usage">Usage <span id="usageBadge" class="badge">$0.00</span></button>
+        <button class="tab" data-tab="trace">Trace</button>
+        <span class="spacer"></span>
+        <button id="traceCopy" class="ghost" title="Copy the full session trace (ids, settings and all events) to the clipboard as JSON">⧉ Copy JSON</button>
+        <button id="traceDownload" class="ghost" title="Download the full trace as JSON">⬇ Export</button>
+      </div>
+      <div id="metrics">
+        <div><small>Active</small><b id="mActive">–</b></div>
+        <div><small>First token</small><b id="mFirst">–</b></div>
+        <div><small>Last turn</small><b id="mTotal">–</b></div>
+        <div><small id="mCountLabel">Handoffs</small><b id="mCount">0</b></div>
+      </div>
+
+      <div id="paneFlow" class="pane active">
+        <div id="flowVisual"></div>
+        <h3>Turn by turn</h3>
+        <div id="timeline"></div>
+      </div>
+      <div id="paneDecisions" class="pane"><div id="decisions"></div></div>
+      <div id="paneUsage" class="pane">
+        <div class="usage-head"><h3>Tokens &amp; cost · this conversation</h3><button id="usageConfig" class="ghost" title="Set the price per model">⚙ Pricing</button></div>
+        <div id="usageBody"></div>
+      </div>
+      <div id="paneTrace" class="pane">
+        <div id="filters">
+          <label><input type="checkbox" data-src="voice" checked /> <span class="chip voice">voice</span></label>
+          <label><input type="checkbox" data-src="agent" checked /> <span class="chip agent">agent</span></label>
+          <label><input type="checkbox" data-src="log" /> <span class="chip log">raw logs</span></label>
+          <label><input type="checkbox" data-src="system" checked /> <span class="chip system">system</span></label>
+          <label><input type="checkbox" data-src="mic" /> <span class="chip log">mic</span></label>
+          <label class="inline"><input type="checkbox" id="autoscroll" checked /> follow</label>
+        </div>
+        <div id="trace"></div>
+      </div>
+    </aside>
+  </main>
+
+  <div id="pricingModal" class="modal" hidden>
+    <div class="modal-box">
+      <h3>Model pricing</h3>
+      <p class="muted">USD per 1 million tokens. Saved in this browser.</p>
+      <div id="cfgRows"></div>
+      <p class="uwarn">⚠ Assumes input cache tokens are 0, so values are not 100% accurate.</p>
+      <div class="modal-actions"><button id="cfgReset" class="ghost">Reset to defaults</button><span class="spacer"></span><button id="cfgCancel">Cancel</button><button id="cfgSave" class="primary">Save</button></div>
+    </div>
+  </div>
+
+  <script src="/static/viz.js"></script>
+  <script src="/static/usage.js"></script>
+  <script src="/static/app.js?v=2"></script>
+</body>
+</html>
