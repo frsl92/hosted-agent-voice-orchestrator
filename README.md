@@ -271,7 +271,9 @@ Rules, identical in both agents:
 - **"I want a person"** (Decision-1 `wants_human` at least 0.7) transfers immediately, with no confirmation and
   regardless of the policy. `background-agent` first waits for tasks that are still running.
 - **Topic classification.** Decision-1 now also asks `other` (is this neither billing nor orders?) and `wants_human`.
-  The policy is enforced in code; the LLM only voices the outcome.
+  The policy is enforced in code; the LLM only voices the outcome. Decision-1 is not told the policy, so
+  `decision.analyze` still lists a declined topic as *detected*; its `routes` field (shown as `policy: topic→route`
+  in the trace) says what the policy then does with each detected topic.
 - **The human transfer is a mock.** `HandoffService` emits a `human.handoff` trace with the reason, topics, extracted
   order ids and a summary — the payload a real contact-centre integration would receive.
 

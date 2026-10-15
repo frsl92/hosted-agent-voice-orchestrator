@@ -48,7 +48,7 @@ async def until_done(ws, seen):
                 seen.append(msg["kind"])
                 if msg["kind"] in SHOW:
                     data = json.dumps(msg["data"])
-                    print("    ", msg["kind"], data if FULL and msg["kind"] in ("decision.call", "agent.error") else data[:150])
+                    print("    ", msg["kind"], data if FULL and msg["kind"] in ("decision.call", "decision.analyze", "agent.error") else data[:150])
         elif msg["type"] == "agent_done":
             print("   agent:", msg["text"] if FULL else msg["text"][:220])
             return

@@ -12,6 +12,7 @@ from routing_policy import (
     REASON_CALLER,
     REASON_POLICY,
     call_start_message,
+    detected_routes,
     is_call_start,
     normalize,
     partition,
@@ -49,6 +50,14 @@ def test_normalize_and_partition():
     assert normalize("billing=human")["billing"] == "human"
     assert partition(BILLING_HUMAN, ["billing", "order_status", "other"]) == (["order_status"], ["billing"], ["other"])
     assert partition(None, ["billing", HUMAN_REQUEST]) == (["billing"], [HUMAN_REQUEST], [])
+
+
+def test_detected_routes_shows_the_policy_outcome_per_detected_topic():
+    assert detected_routes(ORDERS_ONLY, both()) == {"billing": "decline", "order_status": "ai_agent"}
+    assert detected_routes(OTHER_HUMAN, TurnAnalysis(other=0.9, wants_human=0.9)) == {
+        "other": "human", "human_request": "human",
+    }
+    assert detected_routes(ORDERS_ONLY, TurnAnalysis(ok=False)) == {}
 
 
 def test_call_start_envelope_roundtrip():

@@ -187,7 +187,7 @@ const Viz = (() => {
   // ---------------------------------------------------------------- timeline
   function describeStep(k, d) {
     switch (k) {
-      case "decision.analyze": return ["🧠", "decision", "Decision-1 analysed the turn", `billing ${pct(d.billing ?? 0)} · order status ${pct(d.order_status ?? 0)} ·       primary ${d.primary_topic ?? "–"}${(d.other ?? 0) >= .5 ? ` · other ${pct(d.other)}` : ""}${(d.wants_human ?? 0) >= .7 ? " · wants a person" : ""}${(d.wants_to_end ?? 0) >= THRESH.wants_to_end ? " · wants to end" : ""}${d.ok === false ? " · unclear" : ""}`];
+      case "decision.analyze": return ["🧠", "decision", "Decision-1 analysed the turn", `billing ${pct(d.billing ?? 0)} · order status ${pct(d.order_status ?? 0)} ·       primary ${d.primary_topic ?? "–"}${(d.other ?? 0) >= .5 ? ` · other ${pct(d.other)}` : ""}${(d.wants_human ?? 0) >= .7 ? " · wants a person" : ""}${(d.wants_to_end ?? 0) >= THRESH.wants_to_end ? " · wants to end" : ""}      ${d.ok === false ? " · unclear" : ""}${d.routes && Object.keys(d.routes).length ? ` · policy: ${Object.entries(d.routes).map(([t, r]) => `${t}→${r}`).join(", ")}` : ""}`];
       case "decision.guard": return ["🛡", "decision", d.ok ? "Guard: stay with this agent" : "Guard: customer moved on", `other topic ${pct(d.other_topic ?? 0)} · resolved ${pct(d.resolved ?? 0)}`];
       case "decision.confirmation": return ["🙋", "decision", `Confirmation: ${d.verdict}`, (d.wants_to_end ?? 0) >= THRESH.wants_to_end ? "customer also wants to end" : ""];
       case "llm.extract": return ["🔎", "decision", "LLM extracted details", short({ order: d.order_id, period: d.invoice_period }, 120)];
@@ -285,7 +285,7 @@ const Viz = (() => {
 
   function paintDerived(card, k, d) {
     const label = { "decision.analyze": "Routing decision", "decision.guard": "Guard result", "decision.confirmation": "Confirmation" }[k];
-    const body = k === "decision.analyze" ? `topics: ${(d.topics || []).join(", ") || "none"} · primary: ${d.primary_topic ?? "–"}${(d.other ?? 0) >= .5 ? " · other" : ""}${(d.wants_human ?? 0) >= .7 ? " · wants a person" : ""}${(d.wants_to_end ?? 0) >= THRESH.wants_to_end ? " · wants to end" : ""}${d.ok === false ? " · unclear" : ""}`
+    const body = k === "decision.analyze" ? `topics: ${(d.topics || []).join(", ") || "none"} · primary: ${d.primary_topic ?? "–"}${(d.other ?? 0) >= .5 ? " · other" : ""}${(d.wants_human ?? 0) >= .7 ? " · wants a person" : ""}${(d.wants_to_end ?? 0) >= THRESH.wants_to_end ? " · wants to end" : ""}${d.ok === false ? " · unclear" : ""}${d.routes && Object.keys(d.routes).length ? " · policy: " + Object.entries(d.routes).map(([t, r]) => `${t}→${r}`).join(", ")     : ""}`
       : k === "decision.guard" ? `${d.ok ? "stay with " + d.agent : "leave " + d.agent}${(d.queue || []).length ? " · queue: " + d.queue.join(", ") : ""}`
       : `verdict: ${d.verdict}${(d.wants_to_end ?? 0) >= THRESH.wants_to_end ? " · wants to end" : ""}`;
     card.querySelector(".derived-slot").innerHTML = `<div class="derived"><b>${label}:</b> ${esc(body)}</div>`;

@@ -33,6 +33,7 @@ from routing_policy import (
     REASON_CALLER,
     REASON_POLICY,
     HandoffService,
+    detected_routes,
     is_call_start,
     partition,
     policy_from_call_start,
@@ -272,6 +273,7 @@ class Orchestrator:
             primary_topic=analysis.primary_topic, primary_confidence=analysis.primary_confidence,
             wants_to_end=analysis.wants_to_end, ok=analysis.ok, topics=topics,
             other=analysis.other, wants_human=analysis.wants_human,
+            routes=detected_routes(state["policy"], analysis),
         )
 
         if analysis.ok and analysis.confident_end:
@@ -451,6 +453,7 @@ class Orchestrator:
             wants_to_end=analysis.wants_to_end, ok=analysis.ok,
             topics=list(analysis.detected_topics) if analysis.ok else [],
             other=analysis.other, wants_human=analysis.wants_human,
+            routes=detected_routes(state["policy"], analysis),
         )
         if analysis.ok and analysis.confident_end:
             return _Plan(ROUTER, P.DIRECTIVE_GOODBYE, ends_call=True)

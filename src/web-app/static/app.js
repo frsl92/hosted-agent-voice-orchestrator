@@ -829,7 +829,8 @@ function summarize(ev) {
   if (k === "handoff") return `${d.source} → ${d.target}${d.refused ? "  (refused)" : ""}`;
   if (k === "decision.analyze")
     return `billing ${fmt(d.billing)} · orders ${fmt(d.order_status)} · primary ${d.primary_topic} · end ${fmt(d.wants_to_end)}` +
-      (d.topics && d.topics.length ? ` → [${d.topics.join(", ")}]` : "") + ((d.wants_human ?? 0) >= .7 ? " · wants human" : "") + (d.ok === false ? " (not ok)" : "");
+      (d.topics && d.topics.length ? ` → [${d.topics.join(", ")}]` : "") + ((d.wants_human ?? 0) >= .7 ? " · wants human" : "") + (d.ok === false ? " (not ok)" : "") +
+      (d.routes && Object.keys(d.routes).length ? ` · policy: ${Object.entries(d.routes).map(([t, r]) => `${t}→${r}`).join(", ")}` : "");
   if (k === "decision.guard") return `[${d.agent}] other-topic ${fmt(d.other_topic)} · resolved ${fmt(d.resolved)}`;
   if (k === "decision.confirmation") return `verdict: ${d.verdict}`;
   if (k === "policy.snapshot") return Object.entries(d.policy || {}).map(([t, r]) => `${t}=${r}`).join(" · ");

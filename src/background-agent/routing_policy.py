@@ -77,6 +77,18 @@ def partition(policy: dict[str, str] | None, topics: list[str]) -> tuple[list[st
     return ai, human, declined
 
 
+def detected_routes(policy: dict[str, str] | None, analysis: Any) -> dict[str, str]:
+    """What the policy does with each topic Decision-1 detected (for the trace only)."""
+    if not getattr(analysis, "ok", False):
+        return {}
+    topics = list(analysis.detected_topics)
+    if getattr(analysis, "other_detected", False):
+        topics.append(OTHER)
+    if getattr(analysis, "human_requested", False):
+        topics.append(HUMAN_REQUEST)
+    return {topic: route(policy, topic) for topic in topics}
+
+
 def ai_topics(policy: dict[str, str] | None) -> list[str]:
     return [t for t in (BILLING, ORDERS) if route(policy, t) == AI]
 

@@ -7,7 +7,7 @@ import pytest
 from decision import TurnAnalysis
 from lang import CALL_START
 from orchestrator import BILLING, ORDERS, ROUTER, Orchestrator, new_state
-from routing_policy import call_start_message, is_call_start, partition, policy_from_call_start
+from routing_policy import call_start_message, detected_routes, is_call_start, partition, policy_from_call_start
 from tests.test_orchestrator import FakeDecision, FakeRunner, say
 
 BILLING_HUMAN = {"billing": "human", "order_status": "ai_agent", "other": "decline"}
@@ -57,6 +57,14 @@ def test_call_start_envelope_roundtrip():
 
 def test_partition_keeps_order_and_splits_by_route():
     assert partition(BILLING_HUMAN, ["billing", "order_status", "other"]) == (["order_status"], ["billing"], ["other"])
+
+
+def test_detected_routes_shows_the_policy_outcome_per_detected_topic():
+    assert detected_routes(ORDERS_ONLY, ta(billing=0.9, orders=0.9, primary="billing")) == {
+        "billing": "decline", "order_status": "ai_agent",
+    }
+    assert detected_routes(OTHER_HUMAN, ta(other=0.9, human=0.9)) == {"other": "human", "human_request": "human"}
+    assert detected_routes(ORDERS_ONLY, TurnAnalysis(ok=False)) == {}
 
 
 async def test_policy_is_snapshotted_at_call_start(state):

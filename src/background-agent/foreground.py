@@ -34,6 +34,7 @@ from routing_policy import (
     REASON_POLICY,
     HandoffService,
     ai_topics,
+    detected_routes,
     is_call_start,
     partition,
     policy_from_call_start,
@@ -343,6 +344,7 @@ class Foreground:
             "decision.analyze", billing=analysis.billing, order_status=analysis.order_status,
             primary_topic=analysis.primary_topic, wants_to_end=analysis.wants_to_end, ok=analysis.ok,
             topics=list(analysis.detected_topics), other=analysis.other, wants_human=analysis.wants_human,
+            routes=detected_routes(state["policy"], analysis),
         )
         active = self.store.active(key)
 
