@@ -12,7 +12,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import urlparse
 
 import httpx
@@ -36,6 +36,7 @@ TOPIC_THRESHOLD = 0.6
 CHOICE_CONFIDENCE_THRESHOLD = 0.6
 END_THRESHOLD = 0.7
 CONFIRM_THRESHOLD = 0.6
+HUMAN_THRESHOLD = 0.7
 
 
 class DecisionError(RuntimeError):
@@ -78,6 +79,16 @@ class Confirmation:
         return self.wants_to_end >= END_THRESHOLD
 
 
+class Guard(NamedTuple):
+    """Result of the sub-agent guard. Unpacks like the old ``(other_topic, resolved, ok)`` triple at indexes 0-2."""
+
+    other_topic: float
+    resolved: float
+    ok: bool
+    unsupported: float = 0.0
+    wants_human: float = 0.0
+
+
 @dataclass
 class TurnAnalysis:
     """Decision-1's reading of the latest customer utterance."""
@@ -89,6 +100,20 @@ class TurnAnalysis:
     wants_to_end: float = 0.0
     ok: bool = True
     raw: dict[str, Any] = field(default_factory=dict)
+    other: float = 0.0
+    wants_human: float = 0.0
+
+    @property
+    def other_detected(self) -> bool:
+        """The customer raised something that is neither billing nor order status."""
+        return self.other >= TOPIC_THRESHOLD or (
+            self.primary_topic == TOPIC_OTHER and self.primary_confidence >= CHOICE_CONFIDENCE_THRESHOLD
+        )
+
+    @property
+    def human_requested(self) -> bool:
+        """The customer explicitly asked to speak to a person."""
+        return self.wants_human >= HUMAN_THRESHOLD
 
     @property
     def detected_topics(self) -> list[str]:
@@ -171,6 +196,18 @@ class DecisionClient:
                 "type": "noul",
                 "instructions": "In the customer's latest message, is the customer asking about the status, tracking or delivery of an order?",
             },
+            "other": {
+                "type": "noul",
+                "instructions": (
+                    "In the customer's latest message, is the customer asking for help with something that is neither "
+                    "billing nor the status of an order, such as a technical problem, a plan or contract change, or a "
+                    "cancellation? Greetings, thanks and goodbyes are not."
+                ),
+            },
+            "wants_human": {
+                "type": "noul",
+                "instructions": "Does the customer's latest message explicitly ask to speak to a person, an operator or a human agent?",
+            },
             "primary_topic": {
                 "type": "choice",
                 "instructions": "Which topic does the customer's latest message raise first? Ignore topics from earlier turns that the latest message does not mention.",
@@ -196,16 +233,18 @@ class DecisionClient:
                 primary_confidence=float(primary.get("confidence", 0.0)),
                 wants_to_end=float(a["wants_to_end"]["noul"]),
                 raw=a,
+                other=float(a.get("other", {}).get("noul", 0.0)),
+                wants_human=float(a.get("wants_human", {}).get("noul", 0.0)),
             )
         except (DecisionError, KeyError, TypeError, ValueError) as exc:
             logger.warning("analyze_turn failed, using safe fallback: %s", exc)
             return TurnAnalysis(ok=False)
 
-    async def on_topic(self, transcript: str, topic: str) -> tuple[float, float, bool]:
-        """Guard for a sub-agent turn: ``(still_on_topic, resolved, ok)``-style signals.
+    async def on_topic(self, transcript: str, topic: str) -> Guard:
+        """Guard for a sub-agent turn.
 
-        Returns ``(other_topic_prob, resolved_prob, ok)`` where ``other_topic_prob`` is the
-        probability the customer moved to a *different* supported topic.
+        Returns a ``Guard``: ``other_topic`` is the probability the customer moved to the *other* supported topic,
+        ``unsupported`` that they raised something outside both topics, ``wants_human`` that they asked for a person.
         """
         other = TOPIC_ORDERS if topic == TOPIC_BILLING else TOPIC_BILLING
         questions = {
@@ -221,13 +260,30 @@ class DecisionClient:
                     "question or request, even a repeated one."
                 ),
             },
+            "unsupported": {
+                "type": "noul",
+                "instructions": (
+                    "Is the customer's latest message asking for help with something that is neither billing nor "
+                    "the status of an order, such as a technical problem, a plan or contract change, or a cancellation?"
+                ),
+            },
+            "wants_human": {
+                "type": "noul",
+                "instructions": "Does the customer's latest message explicitly ask to speak to a person, an operator or a human agent?",
+            },
         }
         try:
             a = await self.ask(transcript, questions, f"on_topic:{topic}")
-            return float(a["other_topic"]["noul"]), float(a["resolved"]["noul"]), True
+            return Guard(
+                float(a["other_topic"]["noul"]),
+                float(a["resolved"]["noul"]),
+                True,
+                float(a.get("unsupported", {}).get("noul", 0.0)),
+                float(a.get("wants_human", {}).get("noul", 0.0)),
+            )
         except (DecisionError, KeyError, TypeError, ValueError) as exc:
             logger.warning("on_topic guard failed, staying with current agent: %s", exc)
-            return 0.0, 0.0, False
+            return Guard(0.0, 0.0, False)
 
     async def confirmation(self, transcript: str) -> Confirmation:
         """Did the customer confirm a proposal? One call answers yes/no/neither and whether they want to end."""

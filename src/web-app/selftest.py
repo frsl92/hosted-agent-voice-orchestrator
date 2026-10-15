@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import sys
+import urllib.parse
 import urllib.request
 
 import websockets
@@ -20,7 +21,9 @@ AGENT = ARGS[0] if len(ARGS) > 0 else "handoff-agent"
 PORT = ARGS[1] if len(ARGS) > 1 else "8000"
 WHICH = ARGS[2] if len(ARGS) > 2 else "order-tracking"
 FULL = "--full" in sys.argv
+POLICY = next((json.loads(a.split("=", 1)[1]) for a in sys.argv if a.startswith("--policy=")), None)
 SHOW = {"decision.call", "decision.analyze", "decision.guard", "decision.confirmation", "handoff", "phase",
+        "policy.snapshot", "policy.declined", "human.handoff",
         "task.queued", "task.start", "task.done", "task.delivered", "tool.call", "turn.end",
         "subagent.call", "subagent.done", "subagent.session_lost", "agent.error"}
 
@@ -45,7 +48,7 @@ async def until_done(ws, seen):
                 seen.append(msg["kind"])
                 if msg["kind"] in SHOW:
                     data = json.dumps(msg["data"])
-                    print("    ", msg["kind"], data if FULL and msg["kind"] in ("decision.call", "agent.error") else data[:150])
+                    print("    ", msg["kind"], data if FULL and msg["kind"] in ("decision.call", "decision.analyze", "agent.error") else data[:150])
         elif msg["type"] == "agent_done":
             print("   agent:", msg["text"] if FULL else msg["text"][:220])
             return
@@ -56,7 +59,10 @@ async def until_done(ws, seen):
 
 async def run(sample, cookie):
     print(f"== {AGENT} :: {sample['id']}")
+    policy = sample.get("policy") or POLICY
     url = f"ws://localhost:{PORT}/ws/session?agent={AGENT}&mode=text"
+    if policy:
+        url += "&policy=" + urllib.parse.quote(json.dumps(policy))
     seen: list[str] = []
     async with websockets.connect(url, max_size=None, additional_headers={"Cookie": cookie}) as ws:
         while json.loads(await asyncio.wait_for(ws.recv(), 30))["type"] != "ready":

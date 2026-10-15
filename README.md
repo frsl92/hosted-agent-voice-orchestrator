@@ -251,6 +251,37 @@ az containerapp exec -g rg-voice-tester -n voicetester-app `
 Traces come from the agents as `TRACE {json}` log lines (`calltrace.py`); the web app reads them from the agent's
 session log stream for that voice session.
 
+## Routing policy (per session)
+
+The **Routing policy** panel (left column, above the samples) lets the person running the call centre decide, for the
+next session, what happens with each topic. Pick a preset or set each topic yourself; the choice is remembered in the
+browser and locked while a session is running.
+
+| Route | Billing / Order status | Other (anything else) | What the caller hears |
+|---|---|---|---|
+| `ai_agent` | yes | no | The hosted specialist answers |
+| `human` | yes | yes | "I'm transferring you to a human operator" and the call ends |
+| `decline` | yes | yes (default) | "I can't help with that on this call" and the call continues |
+
+Rules, identical in both agents:
+
+- **Mixed requests.** If the caller asks something the AI can answer and something routed to a human, the AI topics
+  are answered first and the human transfer comes last. The plan is still confirmed first, including the transfer.
+- **Declined topics** are stated as unavailable; the caller can ask for something else.
+- **"I want a person"** (Decision-1 `wants_human` at least 0.7) transfers immediately, with no confirmation and
+  regardless of the policy. `background-agent` first waits for tasks that are still running.
+- **Topic classification.** Decision-1 now also asks `other` (is this neither billing nor orders?) and `wants_human`.
+  The policy is enforced in code; the LLM only voices the outcome. Decision-1 is not told the policy, so
+  `decision.analyze` still lists a declined topic as *detected*; its `routes` field (shown as `policy: topic→route`
+  in the trace) says what the policy then does with each detected topic.
+- **The human transfer is a mock.** `HandoffService` emits a `human.handoff` trace with the reason, topics, extracted
+  order ids and a summary — the payload a real contact-centre integration would receive.
+
+The web app sends the policy when the session starts (`/ws/session?policy=…`). The orchestrator receives it in the
+first message of the call (`[call connected]` followed by `[policy] {json}`), snapshots it in its call state and stores
+it in the Foundry conversation. In this POC the policy is trusted as sent; a production system should fetch it
+server-side from an admin-controlled store keyed by the call. New samples (`policy-*`) exercise each case.
+
 ## Configuration reference
 
 **Agents** (set in `azure.yaml` under each service's `env:`; local defaults in each `.env.example`)
@@ -321,7 +352,7 @@ src/web-app/               FastAPI app + static UI, infra/ (Bicep), deploy.ps1, 
 client/voicelive_client.py Voice Live console client
 ```
 
-Each agent folder is self-contained; `decision.py`, `calltrace.py` and `voice_server.py` are intentionally duplicated.
+Each agent folder is self-contained; `decision.py`, `calltrace.py`, `routing_policy.py` and `voice_server.py` are intentionally duplicated.
 Voice Live sends an empty `input` and stores the utterance in the conversation, so `voice_server.py` subclasses
 `ResponsesHostServer` to read the latest user message from the conversation history.
 
@@ -359,4 +390,6 @@ Cloud logs may show harmless `No module named 'agents'` / "A365 OpenAI Agents in
 - `background-agent` proposes a new lookup for a follow-up question instead of answering from earlier results.
 - `caller_scope.py` in the sub-agents monkeypatches a private hosting-library API so agent-to-agent calls (which carry
   no end user) are accepted; re-check it when upgrading `agent-framework-foundry-hosting`.
+- The routing policy is client-supplied and not authenticated beyond the web-app login; the human transfer is a mock.
+  In `handoff-agent`, a call that was transferred to a human resets if the caller keeps talking.
 - The microphone path is browser-only and depends on your device; Bluetooth headsets in particular vary.
