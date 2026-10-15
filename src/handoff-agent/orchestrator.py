@@ -17,12 +17,26 @@ import lang
 import prompts as P
 from calltrace import elapsed_ms, emit
 from decision import (
-    CHOICE_CONFIDENCE_THRESHOLD,
+    HUMAN_THRESHOLD,
     TOPIC_BILLING,
     TOPIC_ORDERS,
     TOPIC_OTHER,
     TOPICS,
     format_transcript,
+)
+from routing_policy import (
+    AI,
+    DECLINE,
+    DEFAULT_POLICY,
+    HUMAN,
+    HUMAN_REQUEST,
+    REASON_CALLER,
+    REASON_POLICY,
+    HandoffService,
+    is_call_start,
+    partition,
+    policy_from_call_start,
+    route,
 )
 
 logger = logging.getLogger(__name__)
@@ -83,6 +97,11 @@ def new_state() -> dict[str, Any]:
         "proposed": [],
         "reasks": 0,
         "lang": lang.DEFAULT,
+        # Routing policy snapshot taken at call start, and what is still owed to a human at the end of the call.
+        "policy": dict(DEFAULT_POLICY),
+        "deferred_human": [],
+        "declined_noted": [],
+        "proposed_declined": [],
         # Foundry session ids of the remote sub-agents, so repeated calls reuse the same session.
         "remote": {},
     }
@@ -124,12 +143,16 @@ class Orchestrator:
     def __init__(self, decision: Any, runner: AgentRunner) -> None:
         self._decision = decision
         self._runner = runner
+        self._human = HandoffService()
 
     async def handle_turn(self, state: dict[str, Any], user_text: str) -> AsyncIterator[str]:
         """Process one customer utterance, yielding the reply text as it is produced."""
         ensure_state(state)
         user_text = (user_text or "").strip()
-        if user_text == lang.CALL_START:
+        if is_call_start(user_text):
+            if not state["greeted"] and not state["history"]:
+                state["policy"] = policy_from_call_start(user_text)
+                emit("policy.snapshot", policy=dict(state["policy"]))
             async for chunk in self._greet(state):
                 yield chunk
             return
@@ -192,7 +215,9 @@ class Orchestrator:
         # The LLM needs a user message to answer; it is removed again once the greeting is spoken.
         state["history"].append({"role": "user", "text": GREETING_CUE})
         try:
-            async for chunk in self._speak(state, turn, _Plan(ROUTER, P.DIRECTIVE_GREET), TurnSignals()):
+            async for chunk in self._speak(
+                state, turn, _Plan(ROUTER, P.directive_greet(state["policy"])), TurnSignals()
+            ):
                 yield chunk
         finally:
             state["history"].clear()
@@ -246,37 +271,65 @@ class Orchestrator:
             "decision.analyze", billing=analysis.billing, order_status=analysis.order_status,
             primary_topic=analysis.primary_topic, primary_confidence=analysis.primary_confidence,
             wants_to_end=analysis.wants_to_end, ok=analysis.ok, topics=topics,
+            other=analysis.other, wants_human=analysis.wants_human,
         )
 
         if analysis.ok and analysis.confident_end:
             return _Plan(ROUTER, P.DIRECTIVE_GOODBYE, ends_call=True)
 
-        if topics:
-            return self._propose(state, topics)
+        policy = state["policy"]
+        if analysis.ok and getattr(analysis, "human_requested", False):
+            return self._human_plan(state, [HUMAN_REQUEST], REASON_CALLER)
 
-        if (
-            analysis.ok
-            and analysis.primary_topic == TOPIC_OTHER
-            and analysis.primary_confidence >= CHOICE_CONFIDENCE_THRESHOLD
-        ):
-            return _Plan(ROUTER, P.DIRECTIVE_OUT_OF_SCOPE)
+        requested = list(topics)
+        if analysis.ok and getattr(analysis, "other_detected", False):
+            requested.append(TOPIC_OTHER)
+        ai, human, declined = partition(policy, requested)
+        if ai or human:
+            return self._propose(state, ai + human, declined)
+        if declined:
+            emit("policy.declined", topics=declined, policy=dict(policy))
+            return _Plan(ROUTER, P.directive_declined(policy, declined))
         if correction:
             return _Plan(ROUTER, P.DIRECTIVE_CORRECTION)
         if not state["greeted"]:
-            return _Plan(ROUTER, P.DIRECTIVE_GREET_REPLY)
-        return _Plan(ROUTER, P.DIRECTIVE_CLARIFY)
+            return _Plan(ROUTER, P.directive_greet_reply(policy))
+        return _Plan(ROUTER, P.directive_clarify(policy))
 
-    def _propose(self, state: dict[str, Any], topics: list[str]) -> _Plan:
+    def _human_plan(self, state: dict[str, Any], topics: list[str], reason: str) -> _Plan:
+        """Transfer the call to a human operator (mock): record the payload, say it, and end the call."""
+        self._human.request(state, reason, topics)
+        state["deferred_human"] = []
+        if reason == REASON_CALLER:
+            return _Plan(ROUTER, P.DIRECTIVE_HUMAN_REQUESTED, ends_call=True)
+        return _Plan(ROUTER, P.DIRECTIVE_HUMAN_HANDOFF.format(topics=P.topics_text(topics)), ends_call=True)
+
+    def _closing(self, state: dict[str, Any]) -> _Plan:
+        """The router has the call back and every AI topic is done: hand over to a human if one is owed."""
+        if state["deferred_human"]:
+            return self._human_plan(state, list(state["deferred_human"]), REASON_POLICY)
+        return _Plan(ROUTER, P.DIRECTIVE_ANYTHING_ELSE)
+
+    def _propose(self, state: dict[str, Any], topics: list[str], declined: list[str] | None = None) -> _Plan:
         """Do not hand off yet: tell the customer what was understood and ask them to confirm."""
+        declined = list(declined or [])
         state["proposed"] = list(topics)
+        state["proposed_declined"] = declined
         state["phase"] = PROPOSING
         state["reasks"] = 0
         state["queue"] = []
-        emit("phase", phase=PROPOSING, proposed=[{"topic": t} for t in topics])
-        return _Plan(ROUTER, P.DIRECTIVE_CONFIRM.format(topics=" and ".join(_label(t) for t in topics)))
+        emit(
+            "phase", phase=PROPOSING, proposed=[{"topic": t, "route": route(state["policy"], t)} for t in topics],
+            declined=declined,
+        )
+        directive = P.DIRECTIVE_CONFIRM.format(topics=P.topics_text(topics)) + P.confirm_extra(
+            state["policy"], topics, declined
+        )
+        return _Plan(ROUTER, directive)
 
     def _reset_proposal(self, state: dict[str, Any]) -> None:
         state["proposed"] = []
+        state["proposed_declined"] = []
         state["phase"] = IDLE
         state["reasks"] = 0
 
@@ -286,7 +339,8 @@ class Orchestrator:
         verdict = conf.verdict
         if verdict == "yes" and conf.confident_end:
             verdict = "no"
-        proposed = [t for t in state["proposed"] if t in TOPICS]
+        proposed = list(state["proposed"])
+        declined = list(state["proposed_declined"])
         emit(
             "decision.confirmation", verdict=verdict, wants_to_end=conf.wants_to_end,
             proposed=[{"topic": t} for t in proposed],
@@ -294,30 +348,36 @@ class Orchestrator:
 
         if verdict == "yes" and proposed:
             self._reset_proposal(state)
-            first, rest = proposed[0], proposed[1:]
-            state["queue"] = list(rest)
+            ai, human, _ = partition(state["policy"], proposed)
+            state["deferred_human"] = list(human)
             emit("phase", phase=IDLE, confirmed=[{"topic": t} for t in proposed])
+            if not ai:
+                return self._closing(state)
+            first, rest = ai[0], ai[1:]
+            state["queue"] = list(rest)
             # One handoff per confirmed topic plus the final return to the router.
             turn.origin = ""
-            turn.max_handoffs = len(proposed) + 1
+            turn.max_handoffs = len(ai) + 1
             turn.run_queue = True
             if self._handoff(state, turn, AGENT_FOR_TOPIC[first]):
                 return _Plan(AGENT_FOR_TOPIC[first], P.DIRECTIVE_CONFIRMED.format(topic=_label(first)))
-            return _Plan(ROUTER, P.DIRECTIVE_CLARIFY)
+            return _Plan(ROUTER, P.directive_clarify(state["policy"]))
 
         if verdict == "amend" and proposed:
             # "Actually the order is 3472": keep every proposed topic and ask for confirmation again.
-            plan = self._propose(state, proposed)
-            plan.directive = P.DIRECTIVE_CONFIRM_AMENDED.format(topics=" and ".join(_label(t) for t in proposed))
+            plan = self._propose(state, proposed, declined)
+            plan.directive = P.DIRECTIVE_CONFIRM_AMENDED.format(topics=P.topics_text(proposed)) + P.confirm_extra(
+                state["policy"], proposed, declined
+            )
             return plan
 
         if verdict == "neither" and proposed:
             state["reasks"] += 1
             if state["reasks"] <= MAX_REASKS:
-                return _Plan(ROUTER, P.DIRECTIVE_REASK.format(topics=" and ".join(_label(t) for t in proposed)))
+                return _Plan(ROUTER, P.DIRECTIVE_REASK.format(topics=P.topics_text(proposed)))
             self._reset_proposal(state)
             emit("phase", phase=IDLE, proposed=[])
-            return _Plan(ROUTER, P.DIRECTIVE_OPEN_QUESTION)
+            return _Plan(ROUTER, P.directive_open_question(state["policy"]))
 
         self._reset_proposal(state)
         emit("phase", phase=IDLE, proposed=[])
@@ -327,26 +387,52 @@ class Orchestrator:
     async def _plan_sub(self, state: dict[str, Any], turn: _Turn) -> _Plan:
         active = state["active_agent"]
         topic = TOPIC_FOR_AGENT[active]
-        other_p, resolved_p, ok = await self._decision.on_topic(self._transcript(state), topic)
+        guard = await self._decision.on_topic(self._transcript(state), topic)
+        other_p, resolved_p, ok = guard[0], guard[1], guard[2]
+        unsupported_p = getattr(guard, "unsupported", 0.0)
+        human_p = getattr(guard, "wants_human", 0.0)
         logger.info("Guard[%s]: other_topic=%.2f resolved=%.2f ok=%s", active, other_p, resolved_p, ok)
-        emit("decision.guard", agent=active, other_topic=other_p, resolved=resolved_p, ok=ok, queue=list(state["queue"]))
+        emit(
+            "decision.guard", agent=active, other_topic=other_p, resolved=resolved_p, ok=ok,
+            unsupported=unsupported_p, wants_human=human_p, queue=list(state["queue"]),
+        )
 
         pending = bool(state["pending_return"])
         resolved = pending
         state["pending_return"] = False
         noted: str | None = None
+        noted_directive = P.DIRECTIVE_NOTED_OTHER
+        policy = state["policy"]
+        if ok and human_p >= HUMAN_THRESHOLD:
+            # The caller asked for a person: leave the specialist and transfer now.
+            turn.origin = ""
+            turn.max_handoffs = max(turn.max_handoffs, 1)
+            if self._handoff(state, turn, ROUTER):
+                return self._human_plan(state, [HUMAN_REQUEST], REASON_CALLER)
         if ok:
             other = _other(topic)
             switched = other_p >= OTHER_TOPIC_THRESHOLD
-            if switched and other not in state["queue"]:
-                state["queue"].append(other)
-                noted = other
+            if switched:
+                target = route(policy, other)
+                if target == AI and other not in state["queue"]:
+                    state["queue"].append(other)
+                    noted = other
+                elif target == HUMAN and other not in state["deferred_human"]:
+                    state["deferred_human"].append(other)
+                    noted, noted_directive = other, P.DIRECTIVE_NOTED_HUMAN
+                elif target == DECLINE and other not in state["declined_noted"]:
+                    state["declined_noted"].append(other)
+                    noted, noted_directive = other, P.DIRECTIVE_NOTED_DECLINED
+            if unsupported_p >= OTHER_TOPIC_THRESHOLD and route(policy, TOPIC_OTHER) == HUMAN:
+                if TOPIC_OTHER not in state["deferred_human"]:
+                    state["deferred_human"].append(TOPIC_OTHER)
+                    noted, noted_directive = TOPIC_OTHER, P.DIRECTIVE_NOTED_HUMAN
             # A deferred return only stands if the customer did not just ask something more on this topic.
             resolved = resolved_p >= RESOLVED_THRESHOLD or (pending and switched)
 
         if resolved:
             return await self._advance(state, turn)
-        return _Plan(active, P.DIRECTIVE_NOTED_OTHER.format(other=_label(noted)) if noted else None)
+        return _Plan(active, noted_directive.format(other=_label(noted)) if noted else None)
 
     async def _advance(self, state: dict[str, Any], turn: _Turn) -> _Plan:
         """The current topic is resolved: bridge to the next queued topic, or return to the router."""
@@ -356,16 +442,19 @@ class Orchestrator:
         active = state["active_agent"]
         if not self._handoff(state, turn, ROUTER):
             return _Plan(active)
+        if state["deferred_human"]:
+            return self._closing(state)
         analysis = await self._decision.analyze_turn(self._transcript(state))
         emit(
             "decision.analyze", billing=analysis.billing, order_status=analysis.order_status,
             primary_topic=analysis.primary_topic, primary_confidence=analysis.primary_confidence,
             wants_to_end=analysis.wants_to_end, ok=analysis.ok,
             topics=list(analysis.detected_topics) if analysis.ok else [],
+            other=analysis.other, wants_human=analysis.wants_human,
         )
         if analysis.ok and analysis.confident_end:
             return _Plan(ROUTER, P.DIRECTIVE_GOODBYE, ends_call=True)
-        return _Plan(ROUTER, P.DIRECTIVE_ANYTHING_ELSE)
+        return self._closing(state)
 
     def _next_queued(self, state: dict[str, Any], turn: _Turn) -> _Plan | None:
         while state["queue"]:
@@ -393,7 +482,7 @@ class Orchestrator:
         if queued is not None:
             return queued
         if self._handoff(state, turn, ROUTER):
-            return _Plan(ROUTER, P.DIRECTIVE_ANYTHING_ELSE)
+            return self._closing(state)
         state["pending_return"] = True
         return None
 

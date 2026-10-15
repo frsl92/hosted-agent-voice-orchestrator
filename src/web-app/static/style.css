@@ -51,6 +51,13 @@ label.inline { display: inline-flex; align-items: center; gap: 6px; color: var(-
 .card { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-top: 8px; background: var(--panel); cursor: pointer; }
 .card:hover { border-color: var(--accent); } .card.selected { border-color: var(--accent); background: #12263a; }
 .card b { display: block; } .card .desc { margin-top: 4px; color: var(--muted); font-size: 12px; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.presets button { padding: 3px 10px; font-size: 12px; border-radius: 999px; }
+.presets button.active { background: var(--accent); color: #04121f; border-color: var(--accent); font-weight: 600; }
+.policy-rows { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; font-size: 13px; }
+.policy-rows select { max-width: none; width: 100%; }
+.policy-rows.locked { opacity: .6; }
+#policyNote.active { color: var(--accent); }
 
 #script { padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .script-head { display: flex; gap: 8px; align-items: center; }

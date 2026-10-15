@@ -158,4 +158,60 @@ SAMPLES: list[dict[str, Any]] = [
             "Era só isso, obrigado. Até logo!",
         ],
     },
+    {
+        "id": "policy-mixed-human",
+        "title": "Policy: billing → human, order stays with AI",
+        "description": (
+            "Loads the 'Billing → human' policy. The customer asks about an order and the bill: the agent answers "
+            "the order first and only then transfers the billing question to a human operator, ending the call."
+        ),
+        "policy": {"billing": "human", "order_status": "ai_agent", "other": "decline"},
+        "turns": [
+            "Olá, queria saber o estado da encomenda 12345 e também o valor da minha última fatura.",
+            "Sim, está correto, pode avançar.",
+        ],
+    },
+    {
+        "id": "policy-billing-human",
+        "title": "Policy: billing → human only",
+        "description": "Loads the 'Billing → human' policy. A billing-only question is confirmed and then transferred.",
+        "policy": {"billing": "human", "order_status": "ai_agent", "other": "decline"},
+        "turns": [
+            "Bom dia, pode dizer-me quanto tenho para pagar este mês?",
+            "Sim, é isso mesmo.",
+        ],
+    },
+    {
+        "id": "policy-orders-only",
+        "title": "Policy: orders only, billing declined",
+        "description": (
+            "Loads the 'Orders only' policy. Billing is declined politely and the call carries on, so the order "
+            "question that follows is handled normally."
+        ),
+        "policy": {"billing": "decline", "order_status": "ai_agent", "other": "decline"},
+        "turns": [
+            "Olá, queria saber o valor da minha fatura.",
+            "Está bem, então pode ver-me a encomenda 12345?",
+            "Sim, é essa, pode verificar.",
+            "Obrigado, até logo!",
+        ],
+    },
+    {
+        "id": "policy-other-human",
+        "title": "Policy: anything else → human",
+        "description": "Loads the 'Other → human' policy. A request the agents have no topic for is sent to a human operator.",
+        "policy": {"billing": "ai_agent", "order_status": "ai_agent", "other": "human"},
+        "turns": [
+            "Pode ajudar-me a mudar de tarifário móvel?",
+            "Sim, por favor.",
+        ],
+    },
+    {
+        "id": "policy-ask-person",
+        "title": "Customer asks for a person",
+        "description": "With any policy, an explicit request to speak to a person transfers immediately, with no confirmation.",
+        "turns": [
+            "Prefiro falar com uma pessoa, por favor.",
+        ],
+    },
 ]

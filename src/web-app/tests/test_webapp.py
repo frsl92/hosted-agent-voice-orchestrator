@@ -229,3 +229,53 @@ def test_session_greets_once_after_update():
     asyncio.run(go())
     assert bridge._conn.items == [CALL_START] and bridge._conn.responses == 1
     assert [m for m in sink.sent if m["type"] == "greeting"] == [{"type": "greeting"}]
+
+
+def test_policy_normalize_validates_every_topic():
+    import policy
+
+    assert policy.normalize(None) == policy.DEFAULT_POLICY
+    assert policy.normalize("garbage") == policy.DEFAULT_POLICY
+    assert policy.normalize('{"billing": "human", "other": "ai_agent"}') == {
+        "billing": "human", "order_status": "ai_agent", "other": "decline"}
+    assert policy.normalize("billing=decline,order_status=human")["order_status"] == "human"
+    assert policy.normalize({"billing": "HUMAN "})["billing"] == "human"
+    assert policy.normalize("{broken") == policy.DEFAULT_POLICY
+
+
+def test_call_start_message_only_carries_non_default_policy():
+    import json
+
+    import policy
+
+    assert policy.call_start_message(None) == CALL_START
+    assert policy.call_start_message(dict(policy.DEFAULT_POLICY)) == CALL_START
+    custom = {"billing": "human", "order_status": "ai_agent", "other": "decline"}
+    first, second = policy.call_start_message(custom).split("\n")
+    assert first == CALL_START and second.startswith(policy.POLICY_MARKER)
+    assert json.loads(second[len(policy.POLICY_MARKER):]) == custom
+
+
+def test_bridge_sends_policy_with_the_call_start():
+    custom = {"billing": "human", "order_status": "ai_agent", "other": "human"}
+    sink = _Recorder()
+    bridge = VoiceBridge(sink, None, None, endpoint="", project_name="", project_endpoint="", agent_name="a",
+                         mode="text", policy=custom)
+    bridge._conn = _Conn()
+    asyncio.run(bridge._on_event(types.SimpleNamespace(type=ServerEventType.SESSION_UPDATED)))
+    assert bridge._conn.items[0].startswith(CALL_START) and '"billing":"human"' in bridge._conn.items[0]
+
+
+def test_config_exposes_policy_options_and_samples_use_valid_policies(monkeypatch):
+    import policy
+
+    monkeypatch.setenv("APP_PASSWORD", "pw")
+    with TestClient(webapp.app) as client:
+        client.post("/login", json={"password": "pw"})
+        cfg = client.get("/api/config").json()
+    assert cfg["defaultPolicy"] == policy.DEFAULT_POLICY
+    assert cfg["policyAllowed"]["other"] == ["human", "decline"]
+    assert {p["id"] for p in cfg["policyPresets"]} >= {"normal", "billing-human", "orders-only", "other-human"}
+    for s in SAMPLES:
+        if "policy" in s:
+            assert policy.normalize(s["policy"]) == s["policy"]

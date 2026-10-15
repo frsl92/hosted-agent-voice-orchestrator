@@ -9,6 +9,7 @@ const state = {
   ctx: null, micStream: null, micNode: null, micAnalyser: null, outAnalyser: null, playHead: 0, sources: new Set(),
   agentBubble: null, agentSegs: [], agentRaw: "", pendingBubble: null, waiters: [], orb: "idle", orbTimer: null, turnToken: 0, gen: 0,
   mic: { deviceId: "", aec: false },
+  policy: null,
 };
 
 // ------------------------------------------------------------------ setup
@@ -26,6 +27,7 @@ async function init() {
   renderSeg("modeSeg", state.config.modes, () => state.mode, (id) => { state.mode = id; changed(); });
   initVoicePicker();
   initMicPicker();
+  initPolicy();
   renderSamples();
 
   $("startBtn").onclick = startSession;
@@ -69,6 +71,65 @@ function renderSeg(id, items, current, onPick) {
 }
 
 const agentCfg = () => state.config.agents.find((a) => a.id === state.agent);
+
+// ------------------------------------------------------------------ routing policy
+
+const TOPIC_NAMES = { billing: "Billing", order_status: "Order status", other: "Anything else" };
+const ROUTE_NAMES = { ai_agent: "AI agent", human: "Human operator", decline: "Decline" };
+
+function initPolicy() {
+  const saved = JSON.parse(localStorage.getItem("routingPolicy") || "null");
+  state.policy = Object.assign({}, state.config.defaultPolicy);
+  if (saved) for (const t of Object.keys(state.policy)) {
+    if ((state.config.policyAllowed[t] || []).includes(saved[t])) state.policy[t] = saved[t];
+  }
+  renderPolicy();
+}
+
+function setPolicy(policy) {
+  for (const t of Object.keys(state.config.defaultPolicy)) {
+    if ((state.config.policyAllowed[t] || []).includes(policy[t])) state.policy[t] = policy[t];
+  }
+  localStorage.setItem("routingPolicy", JSON.stringify(state.policy));
+  renderPolicy();
+}
+
+const samePolicy = (a, b) => Object.keys(a).every((t) => a[t] === b[t]);
+
+function renderPolicy() {
+  if (!state.policy) return;
+  const locked = state.sessionState !== "stopped";
+  const presets = $("policyPresets");
+  presets.innerHTML = "";
+  for (const p of state.config.policyPresets) {
+    const b = document.createElement("button");
+    b.textContent = p.label;
+    b.className = samePolicy(p.policy, state.policy) ? "active" : "";
+    b.disabled = locked;
+    b.onclick = () => setPolicy(p.policy);
+    presets.appendChild(b);
+  }
+  const rows = $("policyRows");
+  rows.innerHTML = "";
+  rows.classList.toggle("locked", locked);
+  for (const topic of Object.keys(state.config.defaultPolicy)) {
+    const label = document.createElement("span");
+    label.textContent = TOPIC_NAMES[topic] || topic;
+    const sel = document.createElement("select");
+    for (const route of state.config.policyAllowed[topic]) {
+      const o = document.createElement("option");
+      o.value = route; o.textContent = ROUTE_NAMES[route] || route;
+      sel.appendChild(o);
+    }
+    sel.value = state.policy[topic];
+    sel.disabled = locked;
+    sel.onchange = () => setPolicy({ ...state.policy, [topic]: sel.value });
+    rows.append(label, sel);
+  }
+  const note = $("policyNote");
+  note.className = "hint" + (locked ? " active" : "");
+  note.textContent = locked ? "Policy in use for this session." : "Applies to the next session you start.";
+}
 
 // Voice + style are only meaningful for the voice experience; the locale is forced to pt-PT server-side.
 const voiceCfg = () => state.config.voices.find((v) => v.id === state.voice);
@@ -243,6 +304,7 @@ function renderSession() {
   $("textInput").placeholder = ready ? "Type a message…" : s === "starting" ? "Starting session… please wait" : "Start a session to chat";
   $("sendBtn").disabled = voice || !ready;
   $("cancelBtn").disabled = !ready || !state.responding;
+  renderPolicy();
   $("muteBtn").hidden = !(voice && ready);
   $("muteBtn").textContent = state.muted ? "🔇 Unmute" : "🎤 Mute";
   $("muteBtn").classList.toggle("on", state.muted);
@@ -304,7 +366,7 @@ function ensureSession() {
   const gen = state.gen;
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const voiceQ = state.mode === "voice" ? `&voice=${encodeURIComponent(state.voice)}&style=${encodeURIComponent(state.style)}` : "";
-  const url = `${proto}://${location.host}/ws/session?agent=${encodeURIComponent(state.agent)}&mode=${state.mode}${voiceQ}`;
+  const url = `${proto}://${location.host}/ws/session?agent=${encodeURIComponent(state.agent)}&mode=${state.mode}${voiceQ}&policy=${encodeURIComponent(JSON.stringify(state.policy))}`;
   state.session = new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
     ws.binaryType = "arraybuffer";
@@ -357,6 +419,8 @@ async function sendText(text) {
 function selectSample(s) {
   state.sample = s;
   state.scriptIdx = 0;
+  // A sample written for a specific policy loads it, unless a session is already running with its own snapshot.
+  if (s.policy && state.sessionState === "stopped") setPolicy(s.policy);
   $("script").hidden = false;
   $("scriptTitle").textContent = s.title;
   renderSamples();
@@ -765,9 +829,12 @@ function summarize(ev) {
   if (k === "handoff") return `${d.source} → ${d.target}${d.refused ? "  (refused)" : ""}`;
   if (k === "decision.analyze")
     return `billing ${fmt(d.billing)} · orders ${fmt(d.order_status)} · primary ${d.primary_topic} · end ${fmt(d.wants_to_end)}` +
-      (d.topics && d.topics.length ? ` → [${d.topics.join(", ")}]` : "") + (d.ok === false ? " (not ok)" : "");
+      (d.topics && d.topics.length ? ` → [${d.topics.join(", ")}]` : "") + ((d.wants_human ?? 0) >= .7 ? " · wants human" : "") + (d.ok === false ? " (not ok)" : "");
   if (k === "decision.guard") return `[${d.agent}] other-topic ${fmt(d.other_topic)} · resolved ${fmt(d.resolved)}`;
   if (k === "decision.confirmation") return `verdict: ${d.verdict}`;
+  if (k === "policy.snapshot") return Object.entries(d.policy || {}).map(([t, r]) => `${t}=${r}`).join(" · ");
+  if (k === "policy.declined") return `declined: ${(d.topics || []).join(", ")}`;
+  if (k === "human.handoff") return `→ human operator (${d.reason}) · topics: ${(d.topics || []).join(", ") || "–"}`;
   if (k === "decision.call") return `${d.purpose} · ${(d.questions || []).join(", ")} · ${d.ms} ms` + (d.error ? ` · ERROR ${d.error}` : "");
   if (k === "usage") return `${d.model} · ${d.purpose} · ${d.input_tokens} in / ${d.output_tokens} out`;
   if (k === "tool.call") {
@@ -802,7 +869,7 @@ const allowedSources = () => new Set([...document.querySelectorAll("#filters inp
 function appendRow(ev) {
   const box = $("trace");
   const row = document.createElement("div");
-  row.className = `row ${ev.source}` + (isError(ev) ? " err" : "") + (ev.kind === "handoff" && !(ev.data || {}).refused ? " hl" : "");
+  row.className = `row ${ev.source}` + (isError(ev) ? " err" : "") + ((ev.kind === "handoff" && !(ev.data || {}).refused) || ev.kind === "human.handoff" ? " hl" : "");
   const top = document.createElement("div");
   top.className = "top";
   const ts = document.createElement("span");

@@ -97,6 +97,50 @@ _STRINGS: dict[str, dict[str, str]] = {
         EN: "Hello, thanks for calling. How can I help you today? I can look at your bill or the status of an order.",
     },
     "your_bill": {PT: "a sua fatura", EN: "your bill"},
+    # Variants of the capability sentences for calls where only one (or none) of the AI topics is available.
+    "greeting_one": {
+        PT: "Olá, obrigado por ligar. Em que posso ajudar? Posso ajudar com {can}.",
+        EN: "Hello, thanks for calling. How can I help you today? I can help with {can}.",
+    },
+    "greeting_none": {PT: "Olá, obrigado por ligar. Em que posso ajudar?", EN: "Hello, thanks for calling. How can I help you today?"},
+    "open_question_one": {
+        PT: "Em que posso ajudar hoje? Posso ajudar com {can}.",
+        EN: "What can I help you with today? I can help with {can}.",
+    },
+    "open_question_none": {PT: "Em que posso ajudar hoje?", EN: "What can I help you with today?"},
+    "say_again_one": {
+        PT: "Desculpe, pode repetir? Posso ajudar com {can}.",
+        EN: "Sorry, could you say that again? I can help with {can}.",
+    },
+    "say_again_none": {PT: "Desculpe, pode repetir?", EN: "Sorry, could you say that again?"},
+    "which_one_one": {PT: "Posso ajudar com {can}. Quer que veja isso?", EN: "I can help with {can}. Would you like that?"},
+    "which_one_none": {PT: "Em que posso ajudar?", EN: "How can I help?"},
+    "can_billing": {PT: "a sua fatura", EN: "your bill"},
+    "can_order_status": {PT: "o estado de uma encomenda", EN: "the status of an order"},
+    "label_billing": {PT: "a faturação", EN: "billing"},
+    "label_order_status": {PT: "o estado de encomendas", EN: "order status"},
+    "label_other": {PT: "outro assunto", EN: "another matter"},
+    "label_human_request": {PT: "falar com uma pessoa", EN: "speaking to a person"},
+    "declined": {
+        PT: "Neste momento não posso ajudar com {topics}.",
+        EN: "I'm not able to help with {topics} on this call.",
+    },
+    "human_transfer": {
+        PT: "Vou transferi-lo agora para um colega da nossa equipa, que o poderá ajudar com {topics}. Obrigado pela chamada!",
+        EN: "I'm now transferring you to a colleague on our team who can help with {topics}. Thanks for calling!",
+    },
+    "human_requested": {
+        PT: "Com certeza, vou transferi-lo agora para um operador. Obrigado pela chamada!",
+        EN: "Of course, I'm transferring you to a human operator now. Thanks for calling!",
+    },
+    "confirm_human": {
+        PT: "Então quer que eu {plan}. Depois transfiro-o para um colega por causa de {human}. Está correto?",
+        EN: "So you'd like me to {plan}. Afterwards I'll transfer you to a colleague for {human}. Is that right?",
+    },
+    "confirm_human_only": {
+        PT: "Então precisa de ajuda com {human}, que será tratado por um colega. Quer que o transfira?",
+        EN: "So you need help with {human}, which a colleague will handle. Would you like me to transfer you?",
+    },
     "your_prev_bill": {PT: "a sua fatura anterior", EN: "your previous bill"},
     "your_latest_bill": {PT: "a sua última fatura", EN: "your latest bill"},
     "order_n": {PT: "a encomenda {order_id}", EN: "order {order_id}"},

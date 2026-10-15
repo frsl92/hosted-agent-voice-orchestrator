@@ -31,6 +31,7 @@ from azure.core.credentials_async import AsyncTokenCredential
 
 import voices
 from logtail import LogTailer, agent_session_id
+from policy import DEFAULT_POLICY, call_start_message, normalize
 
 logger = logging.getLogger("session")
 
@@ -82,6 +83,7 @@ class VoiceBridge:
         audio_out: bool | None = None,
         voice: str | None = None,
         voice_style: str | None = None,
+        policy: dict[str, str] | None = None,
     ) -> None:
         self._sink = sink
         self._cred = credential
@@ -92,6 +94,7 @@ class VoiceBridge:
         self.agent_name = agent_name
         self.mode = "voice" if mode == "voice" else "text"
         self.voice, self.voice_style = voices.resolve(voice, voice_style)
+        self.policy = normalize(policy) if policy is not None else None
         # Voice sessions always speak; text sessions never do.
         self.audio_out = (self.mode == "voice") if audio_out is None else audio_out
         self._conn: VoiceLiveConnection | None = None
@@ -125,7 +128,8 @@ class VoiceBridge:
             self._conn = conn
             await conn.session.update(session=self._session_config())
             if self.mode == "voice":
-                await self.trace("system", "voice.config", voice=self.voice, style=self.voice_style, locale=voices.LOCALE)
+                await self.trace("system", "voice.config", voice=self.voice, style=self.voice_style,
+                                 locale=voices.LOCALE, policy=self.policy or dict(DEFAULT_POLICY))
             events = asyncio.create_task(self._pump_events(conn))
             commands = asyncio.create_task(self._pump_commands(conn, incoming))
             try:
@@ -232,7 +236,9 @@ class VoiceBridge:
         self._first_token_sent = self._first_audio_sent = False
         await self.trace("voice", "call.connected")
         await self._json({"type": "greeting"})
-        await self._conn.conversation.item.create(item=UserMessageItem(content=[InputTextContentPart(text=CALL_START)]))
+        await self._conn.conversation.item.create(
+            item=UserMessageItem(content=[InputTextContentPart(text=call_start_message(self.policy))])
+        )
         await self._conn.response.create()
 
     async def _on_event(self, event: Any) -> None:
